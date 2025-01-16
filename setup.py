@@ -1,8 +1,7 @@
 import os
-from qemuctl import __title__, __version__, __author__, __email__, __description__
+from syzqemuctl import __title__, __version__, __author__, __email__, __description__, __url__
 from setuptools import setup, find_packages
 
-URL = 'https://github.com/QGrain/qemuctl'
 REQUIRED = [
     'click',
     'rich',
@@ -31,11 +30,11 @@ setup(
     long_description_content_type='text/markdown',
     author=__author__,
     author_email=__email__,
-    url=URL,
+    url=__url__,
     packages=find_packages(exclude=['tests', 'tests.*', '*.tests', '*.tests.*']),
     entry_points={
         'console_scripts': [
-            'qemuctl=qemuctl.cli:main',
+            'syzqemuctl=syzqemuctl.cli:main',
         ],
     },
     install_requires=REQUIRED,

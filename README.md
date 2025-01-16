@@ -1,6 +1,6 @@
-# qemuctl
+# syzqemuctl
 
-A command-line tool for managing QEMU virtual machines.
+A command-line tool for managing QEMU virtual machines created through [Syzkaller](https://github.com/google/syzkaller)'s `create-image.sh`.
 
 ## Features
 
@@ -13,7 +13,7 @@ A command-line tool for managing QEMU virtual machines.
 ## Installation
 
 ```bash
-pip install qemuctl
+pip install syzqemuctl
 ```
 
 ## Requirements
@@ -25,50 +25,50 @@ pip install qemuctl
 
 ## Usage
 
-1. Initialize qemuctl:
+1. Initialize syzqemuctl:
 ```bash
-qemuctl init --images-home /path/to/images
+syzqemuctl init --images-home /path/to/images
 ```
 
 2. Create a new VM:
 ```bash
-qemuctl create my-vm
+syzqemuctl create my-vm
 ```
 
 3. Run the VM:
 ```bash
-qemuctl run my-vm --kernel /path/to/kernel
+syzqemuctl run my-vm --kernel /path/to/kernel
 ```
 
 4. Check VM status:
 ```bash
-qemuctl status my-vm
+syzqemuctl status my-vm
 ```
 
 5. Copy files to/from VM:
 ```bash
-qemuctl cp local-file my-vm:/remote/path  # Copy to VM
-qemuctl cp my-vm:/remote/file local-path  # Copy from VM
+syzqemuctl cp local-file my-vm:/remote/path  # Copy to VM
+syzqemuctl cp my-vm:/remote/file local-path  # Copy from VM
 ```
 
 6. Execute commands in VM:
 ```bash
-qemuctl exec my-vm "uname -a"
+syzqemuctl exec my-vm "uname -a"
 ```
 
 7. Stop the VM:
 ```bash
-qemuctl stop my-vm
+syzqemuctl stop my-vm
 ```
 
 8. List all VMs:
 ```bash
-qemuctl list
+syzqemuctl list
 ```
 
 ## Configuration
 
-The configuration file is stored in `~/.config/qemuctl/config.json`. It contains:
+The configuration file is stored in `~/.config/syzqemuctl/config.json`. It contains:
 - Images home directory path
 - Default VM settings
 
