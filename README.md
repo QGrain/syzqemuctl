@@ -23,7 +23,15 @@ pip install syzqemuctl
 - screen
 - SSH client
 
+## Configuration
+
+The configuration file is stored in `~/.config/syzqemuctl/config.json`. It contains:
+- Images home directory path
+- Default VM settings
+
 ## Usage
+
+### ⭐ As a command-line tool
 
 1. Initialize syzqemuctl:
 ```bash
@@ -66,15 +74,25 @@ syzqemuctl stop my-vm
 syzqemuctl list
 ```
 
-## Configuration
+### ⭐ As a Python package
 
-The configuration file is stored in `~/.config/syzqemuctl/config.json`. It contains:
-- Images home directory path
-- Default VM settings
+```python
+from syzqemuctl import VM, ImageManager, VMConfig
+
+manager = ImageManager("/path/to/images_home")
+manager.initialize()
+manager.create_image("my-vm")
+vm = VM("/path/to/images_home/my-vm")
+vm.start(kernel_path="/path/to/kernel")
+# Wait several minutes for the VM to be ready
+with vm:
+    vm.copy_to_vm("/path/to/local/file", "/path/to/vm/remote/file")
+    vm.execute("uname -a")
+```
 
 ## License
 
-MIT License
+Apache-2.0
 
 ## Contributing
 
