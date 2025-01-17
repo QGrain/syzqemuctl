@@ -5,10 +5,6 @@ from setuptools import setup, find_packages
 REQUIRED = [
     'click',
     'rich',
-    'dataclasses',
-    'requests',
-    'pathlib',
-    'datetime',
     'scp',
     'paramiko'
 ]
@@ -34,7 +30,7 @@ setup(
     packages=find_packages(exclude=['tests', 'tests.*', '*.tests', '*.tests.*']),
     entry_points={
         'console_scripts': [
-            'syzqemuctl=syzqemuctl.cli:main',
+            'syzqemuctl=syzqemuctl.cli:cli',
         ],
     },
     install_requires=REQUIRED,

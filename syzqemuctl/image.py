@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
-from datetime import datetime
 
 @dataclass
 class ImageInfo:

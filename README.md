@@ -10,6 +10,12 @@ A command-line tool for managing QEMU virtual machines created through [Syzkalle
 - Command execution in VMs
 - Screen session management for VM console access
 
+## Change Log
+
+- 0.1.0: Initial release (2025-01-16) (CONTAINS BUG: entry_point is wrong)
+- 0.1.1: Update README.md (2025-01-16) (CONTAINS BUG: entry_point is wrong)
+- 0.1.2: Fix bug of entry point (2025-01-17) (USABLE!)
+
 ## Installation
 
 ```bash
@@ -18,10 +24,9 @@ pip install syzqemuctl
 
 ## Requirements
 
-- Python 3.8+
-- QEMU
-- screen
-- SSH client
+```bash
+python3.8+ qemu screen ssh  
+```
 
 ## Configuration
 

@@ -5,7 +5,7 @@ import subprocess
 import paramiko
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple
 from scp import SCPClient
 import time
 
