@@ -1,6 +1,15 @@
-# syzqemuctl
+<h1 align="center">
+    syzqemuctl
+</h1>
 
-A command-line tool for managing QEMU virtual machines created through [Syzkaller](https://github.com/google/syzkaller)'s `create-image.sh`.
+<p align="center">A command-line tool for managing QEMU virtual machines created through <a href="https://github.com/google/syzkaller" target="_blank">Syzkaller</a>'s `create-image.sh`.</p>
+
+<p align="center">
+<img src="https://img.shields.io/pypi/v/syzqemuctl?label=version" alt="PyPI - Version">
+<img src="https://img.shields.io/pypi/dw/syzqemuctl" alt="PyPI - Downloads">
+<img src="https://img.shields.io/github/license/QGrain/syzqemuctl" alt="GitHub License">
+<img src="https://img.shields.io/codacy/grade/683d9c6a11d2492fbaf59ff069b275f2" alt="Codacy grade">
+</p>
 
 ## Features
 
@@ -12,9 +21,14 @@ A command-line tool for managing QEMU virtual machines created through [Syzkalle
 
 ## Change Log
 
-- 0.1.0: Initial release (2025-01-16) (CONTAINS BUG: entry_point is wrong)
-- 0.1.1: Update README.md (2025-01-16) (CONTAINS BUG: entry_point is wrong)
-- 0.1.2: Fix bug of entry point (2025-01-17) (USABLE!)
+- 0.1.0: 2025-01-16
+    - Initial release (BUG: entry_point is wrong)
+- 0.1.1: 2025-01-16
+    - Update README.md (BUG: entry_point is wrong)
+- 0.1.2: 2025-01-17
+    - Fix bug of entry point (USABLE!)
+- 0.1.3: 2025-01-17
+    - Add badges
 
 ## Installation
 
