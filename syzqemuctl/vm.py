@@ -14,10 +14,13 @@ from . import __title__
 @dataclass
 class VMConfig:
     """Virtual machine configuration"""
-    kernel_path: str
+    DEFAULT_MEM = "4G"
+    DEFAULT_SMP = 2
+    
+    kernel: str
     port: int
-    memory: str = "4G"
-    smp: int = 2
+    memory: str = DEFAULT_MEM
+    smp: int = DEFAULT_SMP
     
     @classmethod
     def from_boot_script(cls, script_path: Path) -> Optional["VMConfig"]:
@@ -37,10 +40,10 @@ class VMConfig:
                 return None
                 
             return cls(
-                kernel_path=kernel_match.group(1),
+                kernel=kernel_match.group(1),
                 port=int(port_match.group(1)),
-                memory=mem_match.group(1) if mem_match else "4G",
-                smp=int(smp_match.group(1)) if smp_match else 2
+                memory=mem_match.group(1) if mem_match else cls.DEFAULT_MEM,
+                smp=int(smp_match.group(1)) if smp_match else cls.DEFAULT_SMP
             )
         except Exception:
             return None
@@ -109,7 +112,7 @@ class VM:
         """Generate boot script"""
         script_content = f"""#!/bin/bash
 exec qemu-system-x86_64 \\
- -kernel {vm_conf.kernel_path}/arch/x86/boot/bzImage \\
+ -kernel {vm_conf.kernel}/arch/x86/boot/bzImage \\
  -append "console=ttyS0 root=/dev/sda debug earlyprintk=serial slub_debug=QUZ" \\
  -hda {self.image_path}/bullseye.img \\
  -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
@@ -123,24 +126,42 @@ exec qemu-system-x86_64 \\
         self.boot_script.write_text(script_content)
         self.boot_script.chmod(0o755)
         
-    def start(self, vm_conf: VMConfig) -> bool:
+    def start(self, kernel: str, port: int = None, mem: str = None, smp: int = None) -> bool:
         """Start virtual machine"""
         if self.is_running():
             print("VM is already running")
             return False
+        
+        # Load last boot vm config
+        last_vm_conf = self.get_last_vm_config()
+        if last_vm_conf:
+            port = port or last_vm_conf.port
+            mem = mem or last_vm_conf.memory
+            smp = smp or last_vm_conf.smp
+        else:
+            port = port or self._find_available_port()
+            mem = mem or VMConfig.DEFAULT_MEM
+            smp = smp or VMConfig.DEFAULT_SMP
             
         # Generate boot script and run in screen
-        self._generate_boot_script(vm_conf)
+        self._generate_boot_script(VMConfig(kernel, port, mem, smp))
         
         try:
             # Clean up old screen session
-            subprocess.run(["screen", "-S", self.screen_name, "-X", "quit"], check=False)
-            
+            subprocess.run(
+                ["screen", "-S", self.screen_name, "-X", "quit"],
+                capture_output=True, text=True, check=True
+            )
+            print(f"Cleaned up old screen session: {self.screen_name}")
+        except:
+            pass
+
+        try:
             # Start new screen session
-            subprocess.run([
-                "screen", "-dmS", self.screen_name,
-                str(self.boot_script)
-            ], check=True)
+            subprocess.run(
+                ["screen", "-dmS", self.screen_name, str(self.boot_script)],
+                check=True
+            )
             
             # Wait for PID file (max 5 seconds)
             for _ in range(50):
@@ -156,7 +177,6 @@ exec qemu-system-x86_64 \\
             return True
         except Exception as e:
             print(f"Failed to start VM: {e}")
-            subprocess.run(["screen", "-S", self.screen_name, "-X", "quit"], check=False)
             return False
             
     def stop(self) -> bool:
@@ -221,6 +241,8 @@ exec qemu-system-x86_64 \\
             ssh.close()
             return True
         except Exception:
+            print("VM is not ready, please wait...")
+            print("And you would possibly see errors from paramiko, which can be ignored.")
             return False
             
     def wait_until_ready(self, timeout: int = 120) -> bool:
@@ -272,10 +294,13 @@ exec qemu-system-x86_64 \\
             self._ssh.close()
             self._ssh = None
             
-    def execute_command(self, command: str) -> Tuple[str, str]:
+    def execute(self, command: str) -> Tuple[str, str]:
         """Execute command in VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
+        
+        if not self.is_ready():
+            raise RuntimeError("VM is not ready, please wait...")
             
         stdin, stdout, stderr = self._ssh.exec_command(command)
         return stdout.read().decode(), stderr.read().decode()

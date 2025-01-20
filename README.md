@@ -26,9 +26,11 @@
 - 0.1.1: 2025-01-16
     - Update README.md (BUG: entry_point is wrong)
 - 0.1.2: 2025-01-17
-    - Fix bug of entry point (USABLE!)
+    - Fix bug of entry point (**CLI USABLE NOW!**)
 - 0.1.3: 2025-01-17
     - Add badges
+- 0.1.4: 2025-01-20
+    - Fix the inconsistencies of README and code (**API USABLE NOW!**)
 
 ## Installation
 
@@ -96,17 +98,25 @@ syzqemuctl list
 ### ⭐ As a Python package
 
 ```python
-from syzqemuctl import VM, ImageManager, VMConfig
+from syzqemuctl import ImageManager, VM
 
 manager = ImageManager("/path/to/images_home")
 manager.initialize()
 manager.create_image("my-vm")
+
+# Or just direct specify a created VM and
 vm = VM("/path/to/images_home/my-vm")
-vm.start(kernel_path="/path/to/kernel")
-# Wait several minutes for the VM to be ready
+vm.start(kernel="/path/to/kernel")
+
+# Wait several minutes for the VM to be ready, or you can check by:
+if vm.is_ready():
+    pass
+
+# You need to use this context manager to auto-connect/disconnect
 with vm:
     vm.copy_to_vm("/path/to/local/file", "/path/to/vm/remote/file")
-    vm.execute("uname -a")
+    stdout, stderr = vm.execute("uname -a")
+    print(f"stdout: {stdout}\nstderr: {stderr}")
 ```
 
 ## License

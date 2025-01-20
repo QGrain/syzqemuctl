@@ -42,10 +42,14 @@ class ImageManager:
             script_path.chmod(0o755)
             print(f"Downloaded create-image.sh to {script_path}")
             
-    def initialize(self) -> None:
+    def initialize(self, force: bool = False) -> None:
         """Initialize image directory"""
         self.images_home.mkdir(parents=True, exist_ok=True)
         self._download_create_script()
+        
+        if self.is_template_ready() and not force:
+            print("Template image already exists, initialization complete")
+            return
         
         # Create template directory
         self.template_dir.mkdir(exist_ok=True)
@@ -55,14 +59,12 @@ class ImageManager:
         )
         
         # Run create-image.sh in background
-        status_file = self.template_dir / ".template_ready"
-        if not status_file.exists():
-            print("Starting template image creation, this may take a while...")
-            subprocess.Popen(
-                ["screen", "-dmS", "template-creation", 
-                 "bash", "-c", f"cd {self.template_dir} && ./create-image.sh && touch .template_ready"],
-                start_new_session=True
-            )
+        print("Starting template image creation, this may take a while...")
+        subprocess.Popen(
+            ["screen", "-dmS", "template-creation", 
+                "bash", "-c", f"cd {self.template_dir} && ./create-image.sh && touch .template_ready"],
+            start_new_session=True
+        )
             
     def is_template_ready(self) -> bool:
         """Check if template is ready"""

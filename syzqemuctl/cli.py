@@ -101,7 +101,7 @@ def status(name: str):
                 table.add_row("Status", "[yellow]Starting[/yellow]")
                 
             if vm_conf := vm.get_last_vm_config():
-                table.add_row("Kernel", vm_conf.kernel_path)
+                table.add_row("Kernel", vm_conf.kernel)
                 table.add_row("SSH Port", str(vm_conf.port))
                 table.add_row("Memory", vm_conf.memory)
                 table.add_row("CPU Cores", str(vm_conf.smp))
@@ -201,47 +201,9 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int):
         console.print(f"[red]Error: Image {name} is already running[/red]")
         return
         
-    # Create VM instance
-    vm = VM(str(info.path))
-    
-    # Try to get last config
-    last_vm_conf = vm.get_last_vm_config()
-    
-    # Handle kernel path
-    if not kernel:
-        if not last_vm_conf:
-            console.print("[red]Error: Kernel path required for first run (--kernel)[/red]")
-            return
-        kernel = last_vm_conf.kernel_path
-        console.print(f"[yellow]Using last kernel path: {kernel}[/yellow]")
-        
-    # Handle port allocation
-    if not port:
-        if port := vm._find_available_port():
-            console.print(f"[yellow]Allocated SSH port: {port}[/yellow]")
-        else:
-            console.print("[red]Error: No available ports[/red]")
-            return
-            
-    # Handle other parameters
-    if not mem:
-        mem = last_vm_conf.memory if last_vm_conf else "4G"
-        console.print(f"[yellow]Using memory size: {mem}[/yellow]")
-        
-    if not smp:
-        smp = last_vm_conf.smp if last_vm_conf else 2
-        console.print(f"[yellow]Using CPU cores: {smp}[/yellow]")
-        
-    # Create new config
-    vm_conf = VMConfig(
-        kernel_path=kernel,
-        port=port,
-        memory=mem,
-        smp=smp
-    )
-    
-    # Start VM
-    if vm.start(vm_conf):
+    # Create VM instance and start
+    vm = VM(str(info.path))  
+    if vm.start(kernel, port, mem, smp):
         console.print("[green]Starting VM... SSH will be available soon[/green]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
     else:
@@ -333,13 +295,10 @@ def exec(name: str, command: str):
         
     # Execute command
     vm = VM(str(info.path))
-    if not vm.is_ready():
-        console.print(f"[yellow]Error: Image {name} is starting, please wait[/yellow]")
-        return
         
     with vm:
         try:
-            stdout, stderr = vm.execute_command(command)
+            stdout, stderr = vm.execute(command)
             if stdout:
                 console.print("[bold]STDOUT:[/bold]")
                 console.print(stdout)
