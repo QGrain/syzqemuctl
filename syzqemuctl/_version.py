@@ -1,5 +1,5 @@
 __title__ = "syzqemuctl"
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __description__ = "A command-line tool for managing QEMU virtual machines created through Syzkaller's create-image.sh."
 __author__ = "Zhiyu Zhang"
 __email__ = "zhiyuzhang1999@163.com"
