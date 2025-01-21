@@ -245,13 +245,13 @@ exec qemu-system-x86_64 \\
             print("And you would possibly see errors from paramiko, which can be ignored.")
             return False
             
-    def wait_until_ready(self, timeout: int = 120) -> bool:
+    def wait_until_ready(self, timeout: int = 120, interval: int = 60) -> bool:
         """Wait for VM to be fully started, return False on timeout"""
         start_time = time.time()
         while time.time() - start_time < timeout:
             if self.is_ready():
                 return True
-            time.sleep(10)  # Check every 10 seconds
+            time.sleep(interval)  # Check every interval seconds
         return False
             
     def connect(self, username: str = "root") -> bool:

@@ -19,6 +19,8 @@
 - Command execution in VMs
 - Screen session management for VM console access
 
+> See details in Usage section    :)
+
 ## Change Log
 
 - 0.1.0: 2025-01-16
@@ -31,6 +33,8 @@
     - Add badges
 - 0.1.4: 2025-01-20
     - Fix the inconsistencies of README and code (**API USABLE NOW!**)
+- 0.1.5: 2025-01-21
+    - Complete vm.wait_until_ready and update README
 
 ## Installation
 
@@ -52,7 +56,7 @@ The configuration file is stored in `~/.config/syzqemuctl/config.json`. It conta
 
 ## Usage
 
-### ⭐ As a command-line tool
+### ⭐ As a command-line tool (CLI)
 
 1. Initialize syzqemuctl:
 ```bash
@@ -82,7 +86,7 @@ syzqemuctl cp my-vm:/remote/file local-path  # Copy from VM
 
 6. Execute commands in VM:
 ```bash
-syzqemuctl exec my-vm "uname -a"
+syzqemuctl exec my-vm "uname -a" # You'd better wrap the command with double quotes
 ```
 
 7. Stop the VM:
@@ -95,14 +99,14 @@ syzqemuctl stop my-vm
 syzqemuctl list
 ```
 
-### ⭐ As a Python package
+### ⭐ As a Python package (API)
 
 ```python
 from syzqemuctl import ImageManager, VM
 
 manager = ImageManager("/path/to/images_home")
 manager.initialize()
-manager.create_image("my-vm")
+manager.create("my-vm")
 
 # Or just direct specify a created VM and
 vm = VM("/path/to/images_home/my-vm")
@@ -110,6 +114,10 @@ vm.start(kernel="/path/to/kernel")
 
 # Wait several minutes for the VM to be ready, or you can check by:
 if vm.is_ready():
+    pass
+
+# Or use this API to wait:
+if vm.wait_until_ready(timeout=180, interval=60):
     pass
 
 # You need to use this context manager to auto-connect/disconnect
