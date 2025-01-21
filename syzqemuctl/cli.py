@@ -3,10 +3,10 @@ from rich.console import Console
 from rich.table import Table
 from datetime import datetime
 
-from . import __title__, __version__
+from ._version import __title__, __version__, __author__, __email__
 from .config import global_conf
 from .image import ImageManager
-from .vm import VM, VMConfig
+from .vm import VM
 
 console = Console()
 
@@ -19,7 +19,7 @@ def format_size(size: int) -> str:
     return f"{size:.1f}TB"
 
 @click.group()
-@click.version_option(version=__version__)
+@click.version_option(version=__version__, message=f"{__title__} {__version__}\nAuthor: {__author__} <{__email__}>")
 def cli():
     """QEMU virtual machine management tool"""
     try:

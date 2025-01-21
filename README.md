@@ -35,6 +35,8 @@
     - Fix the inconsistencies of README and code (**API USABLE NOW!**)
 - 0.1.5: 2025-01-21
     - Complete vm.wait_until_ready and update README
+- 0.1.6: 2025-01-21
+    - Move infos to _version.py to solve the installation dependency problem
 
 ## Installation
 

@@ -1,5 +1,5 @@
 import os
-from syzqemuctl import __title__, __version__, __author__, __email__, __description__, __url__
+from syzqemuctl._version import __title__, __version__, __author__, __email__, __description__, __url__
 from setuptools import setup, find_packages
 
 REQUIRED = [
