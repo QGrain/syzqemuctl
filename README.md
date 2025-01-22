@@ -41,6 +41,9 @@
     - Fix the installation dependency problem
 - 0.1.8: 2025-01-22
     - Add smart option --version and move some functions to utils.py
+- 0.1.9: 2025-01-22
+    - Add safe_decode in execute in vm.py
+
 ## Installation
 
 ```bash

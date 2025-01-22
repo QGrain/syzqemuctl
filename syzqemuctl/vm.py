@@ -279,7 +279,7 @@ exec qemu-system-x86_64 \\
             self._ssh.close()
             self._ssh = None
             
-    def execute(self, command: str) -> Tuple[str, str]:
+    def execute(self, command: str, silent: bool = False) -> Tuple[str, str]:
         """Execute command in VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
@@ -288,7 +288,20 @@ exec qemu-system-x86_64 \\
             raise RuntimeError("VM is not ready, please wait...")
             
         stdin, stdout, stderr = self._ssh.exec_command(command)
-        return stdout.read().decode(), stderr.read().decode()
+
+        def safe_decode(data):
+            try:
+                return data.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    return data.decode('utf-8', errors='backslashreplace')
+                except UnicodeDecodeError:
+                    return data.decode('utf-8', errors='replace')
+
+        if not silent:
+            return safe_decode(stdout.read()), safe_decode(stderr.read())
+        else:
+            return None, None
         
     def copy_to_vm(self, local_path: str, remote_path: str) -> None:
         """Copy file to VM"""
