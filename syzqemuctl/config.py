@@ -9,15 +9,17 @@ class GlobalConfig:
     """Global configuration management"""
     DEFAULT_CONFIG_DIR = os.path.expanduser(f"~/.config/{__title__}")
     DEFAULT_CONFIG_FILE = "settings.json"
+    DEFAULT_CACHE_DIR = os.path.expanduser(f"~/.cache/{__title__}")
     
     def __init__(self):
         self.config_dir = Path(self.DEFAULT_CONFIG_DIR)
         self.config_file = self.config_dir / self.DEFAULT_CONFIG_FILE
         self._settings: Dict = {}
+        os.makedirs(self.DEFAULT_CONFIG_DIR, exist_ok=True)
+        os.makedirs(self.DEFAULT_CACHE_DIR, exist_ok=True)
         
     def initialize(self, images_home: str, **kwargs) -> None:
         """Initialize configuration"""
-        self.config_dir.mkdir(parents=True, exist_ok=True)
         
         self._settings = {
             "images_home": str(Path(images_home).absolute()),

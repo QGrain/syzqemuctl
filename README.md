@@ -39,7 +39,8 @@
     - Update version info and try to solve the installation dependency problem
 - 0.1.7: 2025-01-21
     - Fix the installation dependency problem
-
+- 0.1.8: 2025-01-22
+    - Add smart option --version and move some functions to utils.py
 ## Installation
 
 ```bash

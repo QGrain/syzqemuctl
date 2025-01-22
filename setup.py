@@ -22,7 +22,9 @@ REQUIRED = [
     'click',
     'rich',
     'scp',
-    'paramiko'
+    'paramiko',
+    'requests',
+    'packaging',
 ]
 
 here = os.path.abspath(os.path.dirname(__file__))

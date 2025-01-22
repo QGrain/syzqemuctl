@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
+from . import utils
 
 @dataclass
 class ImageInfo:
@@ -29,18 +30,8 @@ class ImageManager:
         """Download create-image.sh script"""
         script_path = self.images_home / "create-image.sh"
         if not script_path.exists():
-            # Check proxy settings
-            proxies = {}
-            if os.environ.get("http_proxy"):
-                proxies["http"] = os.environ["http_proxy"]
-            if os.environ.get("https_proxy"):
-                proxies["https"] = os.environ["https_proxy"]
-                
-            response = requests.get(self.SYZKALLER_SCRIPT_URL, proxies=proxies)
-            response.raise_for_status()
-            script_path.write_text(response.text)
-            script_path.chmod(0o755)
-            print(f"Downloaded create-image.sh to {script_path}")
+            if utils.download_file(self.SYZKALLER_SCRIPT_URL, str(script_path), executable=True):
+                print(f"Downloaded create-image.sh to {script_path}")
             
     def initialize(self, force: bool = False) -> None:
         """Initialize image directory"""

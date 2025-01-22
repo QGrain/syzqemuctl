@@ -10,6 +10,7 @@ from scp import SCPClient
 import time
 
 from . import __title__
+from . import utils
 
 @dataclass
 class VMConfig:
@@ -190,24 +191,8 @@ exec qemu-system-x86_64 \\
             
             # Read and terminate QEMU process
             pid = int(self.pid_file.read_text().strip())
-            os.kill(pid, signal.SIGTERM)
-            
-            # Wait for process to end
-            for _ in range(50):
-                try:
-                    os.kill(pid, 0)
-                    time.sleep(0.1)
-                except ProcessLookupError:
-                    break
-            
-            # Force kill if needed
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-                
-            return True
-        except (ValueError, OSError) as e:
+            return utils.kill_process(pid)
+        except ValueError as e:
             print(f"Failed to stop VM: {e}")
             return False
             

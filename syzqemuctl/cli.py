@@ -7,19 +7,32 @@ from ._version import __title__, __version__, __author__, __email__
 from .config import global_conf
 from .image import ImageManager
 from .vm import VM
+from . import utils
 
 console = Console()
 
-def format_size(size: int) -> str:
-    """Format file size"""
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size < 1024:
-            return f"{size:.1f}{unit}"
-        size /= 1024
-    return f"{size:.1f}TB"
+def print_version(ctx, param, value):
+    """Custom version info print function"""
+    if not value or ctx.resilient_parsing:
+        return
+    
+    version_info = f"[default][bold]{__title__} {__version__}\nAuthor: {__author__} <{__email__}>[/bold][/default]"
+    
+    # Check for latest version
+    latest_version, error = utils.check_latest_version()
+    if latest_version and utils.needs_update(__version__, latest_version):
+        version_info += f"\n\n[yellow]Find new version: {latest_version}[/yellow]"
+        version_info += "\n[yellow]Please run the following command to update:[/yellow]"
+        version_info += "\n[green]pip install --upgrade syzqemuctl[/green]"
+    elif error:
+        version_info += f"\n\n[dim]Failed to check update: {error}[/dim]"
+    
+    console.print(version_info)
+    ctx.exit()
 
 @click.group()
-@click.version_option(version=__version__, message=f"{__title__} {__version__}\nAuthor: {__author__} <{__email__}>")
+@click.option('--version', is_flag=True, callback=print_version, expose_value=False, is_eager=True,
+              help='print version info')
 def cli():
     """QEMU virtual machine management tool"""
     try:
@@ -35,20 +48,26 @@ def cli():
 
 @cli.command()
 @click.option("--images-home", required=True, help="Images home directory")
-def init(images_home: str):
+@click.option("--force", is_flag=True, help="Force reinitialize")
+def init(images_home: str, force: bool = False):
     """Initialize configuration"""
-    if global_conf.is_initialized():
+    if global_conf.is_initialized() and not force:
         console.print(f"[yellow]Warning: {__title__} is already initialized[/yellow]")
+        console.print(f"[yellow]Current cache dir: {global_conf.DEFAULT_CACHE_DIR}[/yellow]")
+        console.print(f"[yellow]Current config file: {global_conf.config_file}[/yellow]")
+        console.print(f"[yellow]Current images home: {global_conf.images_home}[/yellow]")
         if not click.confirm("Reinitialize?"):
+            console.print("[green]Everything kept[/green]")
             return
             
     # Initialize config
     global_conf.initialize(images_home)
+    console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
     console.print(f"[green]Config file created: {global_conf.config_file}[/green]")
     
     # Initialize image manager
     manager = ImageManager(global_conf.images_home)
-    manager.initialize()
+    manager.initialize(force)
     console.print("[green]Starting template image creation, this may take a while...[/green]")
     console.print(f"Use '{__title__} status image-template' to check progress")
 
