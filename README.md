@@ -43,6 +43,8 @@
     - Add smart option --version and move some functions to utils.py
 - 0.1.9: 2025-01-22
     - Add safe_decode in execute in vm.py
+- 0.1.10: 2025-01-22
+    - Use the kernel in last vm config to start vm by default
 
 ## Installation
 

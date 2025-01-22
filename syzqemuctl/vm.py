@@ -136,6 +136,7 @@ exec qemu-system-x86_64 \\
         # Load last boot vm config
         last_vm_conf = self.get_last_vm_config()
         if last_vm_conf:
+            kernel = kernel or last_vm_conf.kernel
             port = port or last_vm_conf.port
             mem = mem or last_vm_conf.memory
             smp = smp or last_vm_conf.smp
@@ -143,7 +144,7 @@ exec qemu-system-x86_64 \\
             port = port or self._find_available_port()
             mem = mem or VMConfig.DEFAULT_MEM
             smp = smp or VMConfig.DEFAULT_SMP
-            
+        assert kernel, "Kernel path is required"
         # Generate boot script and run in screen
         self._generate_boot_script(VMConfig(kernel, port, mem, smp))
         
