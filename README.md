@@ -45,6 +45,10 @@
     - Add safe_decode in execute in vm.py
 - 0.1.10: 2025-01-22
     - Use the kernel in last vm config to start vm by default
+- 0.2.0: 2025-04-25
+    - Add user friendly instruction for running image and update email
+- 0.2.1: 2025-04-26
+    - Add documentation for copy dirs from local to vm
 
 ## Installation
 
@@ -68,6 +72,8 @@ The configuration file is stored in `~/.config/syzqemuctl/config.json`. It conta
 
 ### ⭐ As a command-line tool (CLI)
 
+You can check the usage of `syzqemuctl` or `syzqemuctl CMD` by adding `--help`. Here are some common uses:
+
 1. Initialize syzqemuctl:
 ```bash
 syzqemuctl init --images-home /path/to/images
@@ -88,10 +94,14 @@ syzqemuctl run my-vm --kernel /path/to/kernel
 syzqemuctl status my-vm
 ```
 
-5. Copy files to/from VM:
+5. Copy files/dir to/from VM:
 ```bash
-syzqemuctl cp local-file my-vm:/remote/path  # Copy to VM
-syzqemuctl cp my-vm:/remote/file local-path  # Copy from VM
+syzqemuctl cp local_file my-vm:/remote/path  # Copy to VM
+syzqemuctl cp my-vm:/remote/file local_path  # Copy from VM
+
+syzqemuctl cp local_dir my-vm:/remote/       # Copy local_dir to VM
+syzqemuctl cp local_dir/ my-vm:/remote/      # Copy local_dir/* to VM
+
 ```
 
 6. Execute commands in VM:
@@ -107,6 +117,11 @@ syzqemuctl stop my-vm
 8. List all VMs:
 ```bash
 syzqemuctl list
+```
+
+9. Delete the VM:
+```bash
+syzqemuctl delete my-vm
 ```
 
 ### ⭐ As a Python package (API)

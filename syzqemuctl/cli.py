@@ -1,3 +1,4 @@
+import os
 import click
 from rich.console import Console
 from rich.table import Table
@@ -290,11 +291,15 @@ def cp(src: str, dst: str):
     with vm:
         try:
             if src_image:
+                dst_dir = os.path.dirname(dst_path)
+                os.makedirs(dst_dir, exist_ok=True)
                 vm.copy_from_vm(src_path, dst_path)
-                console.print(f"[green]Copied from VM: {dst_path}[/green]")
+                console.print(f"[green]Copied from VM: {src} to {dst}[/green]")
             else:
+                if not os.path.exists(src_path):
+                    raise FileNotFoundError(f"Source path {src_path} does not exist")
                 vm.copy_to_vm(src_path, dst_path)
-                console.print(f"[green]Copied to VM: {dst_path}[/green]")
+                console.print(f"[green]Copied to VM: {src} to {dst}[/green]")
         except Exception as e:
             console.print(f"[red]Failed to copy file: {e}[/red]")
 

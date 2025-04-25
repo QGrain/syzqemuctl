@@ -144,9 +144,10 @@ exec qemu-system-x86_64 \\
             port = port or self._find_available_port()
             mem = mem or VMConfig.DEFAULT_MEM
             smp = smp or VMConfig.DEFAULT_SMP
-        assert kernel, "Kernel path is required"
+        assert kernel, "Kernel path is required for the first boot"
         # Generate boot script and run in screen
         self._generate_boot_script(VMConfig(kernel, port, mem, smp))
+        print(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}")
         
         try:
             # Clean up old screen session
