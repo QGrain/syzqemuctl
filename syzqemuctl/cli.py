@@ -74,10 +74,11 @@ def init(images_home: str, force: bool = False):
 
 @cli.command()
 @click.argument("name")
-def create(name: str):
+@click.option("--size", type=int, help="Disk size, 5120 by default (i.e., 5120MB)")
+def create(name: str, size: int):
     """Create new image"""
     manager = ImageManager(global_conf.images_home)
-    manager.create(name)
+    manager.create(name, size)
 
 @cli.command()
 @click.argument("name")

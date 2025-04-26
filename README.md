@@ -51,6 +51,8 @@
     - Add documentation for copy dirs from local to vm
 - 0.2.2: 2025-04-27
     - Add restart for vm and update README
+- 0.2.3: 2025-04-27
+    - Set default image size of image-template to 5GB and support --size for creating vm
 
 ## Installation
 
@@ -83,7 +85,7 @@ syzqemuctl init --images-home /path/to/images
 
 2. Create a new VM:
 ```bash
-syzqemuctl create my-vm
+syzqemuctl create my-vm [--size 5120]   # --size INT for specifying the VM disk size (5GB by default)
 ```
 
 3. Run the VM:

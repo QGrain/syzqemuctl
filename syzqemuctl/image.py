@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
 from . import utils
+from . import __title__
 
 @dataclass
 class ImageInfo:
@@ -49,11 +50,11 @@ class ImageManager:
             self.template_dir / "create-image.sh"
         )
         
-        # Run create-image.sh in background
+        # Run create-image.sh in background (-s 5120 for 5GB image size by default)
         print("Starting template image creation, this may take a while...")
         subprocess.Popen(
-            ["screen", "-dmS", "template-creation", 
-                "bash", "-c", f"cd {self.template_dir} && ./create-image.sh && touch .template_ready"],
+            ["screen", "-dmS", "{__title__}-template-creation", 
+                "bash", "-c", f"cd {self.template_dir} && ./create-image.sh -s 5120 && touch .template_ready"],
             start_new_session=True
         )
             
@@ -61,7 +62,7 @@ class ImageManager:
         """Check if template is ready"""
         return (self.template_dir / ".template_ready").exists()
         
-    def create(self, name: str) -> bool:
+    def create(self, name: str, size: int = None) -> bool:
         """Create new image"""
         if not self.is_template_ready():
             print("Template image not ready, please wait...")
@@ -71,15 +72,35 @@ class ImageManager:
         if target_dir.exists():
             print(f"Image {name} already exists")
             return False
-            
-        try:
-            print(f"Creating image: {name}")
-            subprocess.run(["cp", "-r", str(self.template_dir), str(target_dir)], check=True)
-            print(f"Successfully created image: {name}")
-            return True
-        except Exception as e:
-            print(f"Failed to create image: {e}")
+
+        if size is None:
+            try:
+                print(f"Creating image: {name}")
+                subprocess.run(["cp", "-r", str(self.template_dir), str(target_dir)], check=True)
+                print(f"Successfully created image: {name}")
+                return True
+            except Exception as e:
+                print(f"Failed to create image: {e}")
+                return False
+        elif size <= 0:
+            print(f"Invalid image size: {size}MB")
             return False
+        elif size <= 20 * 1024:
+            target_dir.mkdir(exist_ok=True)
+            print(f"Creating image: {name} with size {size}MB from sratch")
+            try:
+                subprocess.Popen(
+                    ["screen", "-dmS", "{__title__}-{name}-creation", 
+                        "bash", "-c", f"cd {target_dir} && ./create-image.sh -s {size}"],
+                    start_new_session=True
+                )
+            except Exception as e:
+                print(f"Failed to create image: {e}")
+                return False
+        else:
+            print(f"Image size too large: {size}MB, max 20*1024MB")
+            return False
+                
             
     def delete(self, name: str) -> bool:
         """Delete image"""
