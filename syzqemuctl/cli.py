@@ -114,7 +114,10 @@ def status(name: str):
                          datetime.fromtimestamp(info.created_at).strftime("%Y-%m-%d %H:%M:%S"))
             
         # Show running status
-        if info.running:
+        creation_screen = f"{__title__}-{name}-creation"
+        if utils.check_screen_exists(creation_screen):
+            table.add_row("Status", "[yellow]Creating[/yellow]")
+        elif info.running:
             vm = VM(str(info.path))
             if vm.is_ready():
                 table.add_row("Status", "[green]Running[/green]")

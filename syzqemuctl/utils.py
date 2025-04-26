@@ -5,6 +5,7 @@ from functools import lru_cache
 import os
 import signal
 import time
+import subprocess
 
 from ._version import __version__, __title__
 from .config import global_conf
@@ -123,4 +124,12 @@ def kill_process(pid: int, force: bool = True) -> bool:
     except ProcessLookupError:
         return True
     except OSError:
-        return False 
+        return False
+
+def check_screen_exists(screen_name: str) -> bool:
+    """Check if a screen session exists"""
+    try:
+        result = subprocess.run(['screen', '-ls'], capture_output=True, text=True)
+        return screen_name in result.stdout
+    except subprocess.SubprocessError:
+        return False

@@ -52,7 +52,9 @@
 - 0.2.2: 2025-04-27
     - Add restart for vm and update README
 - 0.2.3: 2025-04-27
-    - Set default image size of image-template to 5GB and support --size for creating vm
+    - Set default image size of image-template to 5GB and support --size for creating vm (BUG: size it doesn't work)
+- 0.2.4: 2025-04-27
+    - Fix a missing file in creating vm with specified size and optimize printing
 
 ## Installation
 

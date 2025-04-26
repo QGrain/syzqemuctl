@@ -53,7 +53,7 @@ class ImageManager:
         # Run create-image.sh in background (-s 5120 for 5GB image size by default)
         print("Starting template image creation, this may take a while...")
         subprocess.Popen(
-            ["screen", "-dmS", "{__title__}-template-creation", 
+            ["screen", "-dmS", f"{__title__}-template-creation", 
                 "bash", "-c", f"cd {self.template_dir} && ./create-image.sh -s 5120 && touch .template_ready"],
             start_new_session=True
         )
@@ -87,10 +87,14 @@ class ImageManager:
             return False
         elif size <= 20 * 1024:
             target_dir.mkdir(exist_ok=True)
+            shutil.copy2(
+                self.images_home / "create-image.sh",
+                target_dir / "create-image.sh"
+            )
             print(f"Creating image: {name} with size {size}MB from sratch")
             try:
                 subprocess.Popen(
-                    ["screen", "-dmS", "{__title__}-{name}-creation", 
+                    ["screen", "-dmS", f"{__title__}-{name}-creation", 
                         "bash", "-c", f"cd {target_dir} && ./create-image.sh -s {size}"],
                     start_new_session=True
                 )
