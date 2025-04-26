@@ -249,6 +249,33 @@ def stop(name: str):
         console.print("[red]Failed to stop VM[/red]")
 
 @cli.command()
+@click.argument("name")
+def restart(name: str):
+    """Restart virtual machine with last configuration"""
+    manager = ImageManager(global_conf.images_home)
+    if not (info := manager.get_image_info(name)):
+        console.print(f"[red]Error: Image {name} not found[/red]")
+        return
+    
+    if not info.running:
+        console.print(f"[yellow]Warning: Image {name} is not running[/yellow]")
+        return
+
+    # Stop VM
+    vm = VM(str(info.path))
+    if not vm.stop():
+        console.print("[red]Failed to stop VM[/red]")
+        return
+    console.print("[green]VM stopped[/green]")
+    
+    # Restart VM with the previous configuration
+    if vm.start():
+        console.print("[yellow]Restarting VM, this may take some time[/yellow]")
+        console.print(f"Use '{__title__} status {name}' or check console for status")
+    else:
+        console.print("[red]Failed to restart VM[/red]")
+
+@cli.command()
 @click.argument("src")
 @click.argument("dst")
 def cp(src: str, dst: str):

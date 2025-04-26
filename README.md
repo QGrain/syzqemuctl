@@ -49,6 +49,8 @@
     - Add user friendly instruction for running image and update email
 - 0.2.1: 2025-04-26
     - Add documentation for copy dirs from local to vm
+- 0.2.2: 2025-04-27
+    - Add restart for vm and update README
 
 ## Installation
 
@@ -114,12 +116,17 @@ syzqemuctl exec my-vm "uname -a" # You'd better wrap the command with double quo
 syzqemuctl stop my-vm
 ```
 
-8. List all VMs:
+8. Restart the VM:
+```bash
+syzqemuctl restart my-vm
+```
+
+9. List all VMs:
 ```bash
 syzqemuctl list
 ```
 
-9. Delete the VM:
+10. Delete the VM:
 ```bash
 syzqemuctl delete my-vm
 ```

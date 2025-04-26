@@ -127,7 +127,7 @@ exec qemu-system-x86_64 \\
         self.boot_script.write_text(script_content)
         self.boot_script.chmod(0o755)
         
-    def start(self, kernel: str, port: int = None, mem: str = None, smp: int = None) -> bool:
+    def start(self, kernel: str = None, port: int = None, mem: str = None, smp: int = None) -> bool:
         """Start virtual machine"""
         if self.is_running():
             print("VM is already running")
