@@ -23,6 +23,10 @@
 
 ## Change Log
 
+Each version without `BUG` tag is usable.
+
+<details>
+<summary>v0.1.0 ~ v0.1.10</summary>
 - 0.1.0: 2025-01-16
     - Initial release (BUG: entry_point is wrong)
 - 0.1.1: 2025-01-16
@@ -45,6 +49,10 @@
     - Add safe_decode in execute in vm.py
 - 0.1.10: 2025-01-22
     - Use the kernel in last vm config to start vm by default
+</details>
+
+<details>
+<summary>v0.2.0 ~ progressing</summary>
 - 0.2.0: 2025-04-25
     - Add user friendly instruction for running image and update email
 - 0.2.1: 2025-04-26
@@ -55,6 +63,9 @@
     - Set default image size of image-template to 5GB and support --size for creating vm (BUG: size it doesn't work)
 - 0.2.4: 2025-04-27
     - Fix a missing file in creating vm with specified size and optimize printing
+- 0.2.5: 2025-05-01
+    - Add security check for command injection
+</details>
 
 ## Installation
 

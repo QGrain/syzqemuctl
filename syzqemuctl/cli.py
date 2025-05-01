@@ -61,6 +61,9 @@ def init(images_home: str, force: bool = False):
             console.print("[green]Everything kept[/green]")
             return
             
+    if utils.check_command_injection(images_home):
+        console.print(f"[red]Invalid image home: contains dangerous characters[/red]")
+        return
     # Initialize config
     global_conf.initialize(images_home)
     console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
@@ -77,6 +80,9 @@ def init(images_home: str, force: bool = False):
 @click.option("--size", type=int, help="Disk size, 5120 by default (i.e., 5120MB)")
 def create(name: str, size: int):
     """Create new image"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     manager.create(name, size)
 
@@ -84,6 +90,9 @@ def create(name: str, size: int):
 @click.argument("name")
 def delete(name: str):
     """Delete image"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     manager.delete(name)
 
@@ -91,6 +100,9 @@ def delete(name: str):
 @click.argument("name")
 def status(name: str):
     """Query image status"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     if info := manager.get_image_info(name):
         table = Table(show_header=True, header_style="bold magenta")
@@ -214,6 +226,9 @@ def list():
 @click.option("--smp", type=int, help="CPU cores")
 def run(name: str, kernel: str, port: int, mem: str, smp: int):
     """Run virtual machine"""
+    if utils.check_command_injection(name) or utils.check_command_injection(kernel) or utils.check_command_injection(mem):
+        console.print(f"[red]Invalid input: contains dangerous characters[/red]")
+        return
     # Check if image exists
     manager = ImageManager(global_conf.images_home)
     if not (info := manager.get_image_info(name)):
@@ -237,6 +252,9 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int):
 @click.argument("name")
 def stop(name: str):
     """Stop virtual machine"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
@@ -256,6 +274,9 @@ def stop(name: str):
 @click.argument("name")
 def restart(name: str):
     """Restart virtual machine with last configuration"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
@@ -284,6 +305,9 @@ def restart(name: str):
 @click.argument("dst")
 def cp(src: str, dst: str):
     """Copy files between host and VM"""
+    if utils.check_command_injection(src) or utils.check_command_injection(dst):
+        console.print(f"[red]Invalid input: contains dangerous characters[/red]")
+        return
     # Parse paths
     def parse_path(path: str):
         if ":" in path:
@@ -339,6 +363,9 @@ def cp(src: str, dst: str):
 @click.argument("command")
 def exec(name: str, command: str):
     """Execute command in VM"""
+    if utils.check_command_injection(name):
+        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
+        return
     manager = ImageManager(global_conf.images_home)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")

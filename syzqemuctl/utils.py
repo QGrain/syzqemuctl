@@ -133,3 +133,36 @@ def check_screen_exists(screen_name: str) -> bool:
         return screen_name in result.stdout
     except subprocess.SubprocessError:
         return False
+
+def check_command_injection(input_str: str) -> bool:
+    """
+    Check if the user controlled string is safe from command injection
+    
+    Args:
+        input_str: string to check
+    Returns:
+        bool: True for insecure, False for secure
+    """
+    # Define dangerous characters and patterns
+    dangerous_chars = {
+        '&',        # command1 & command2
+        ';',        # command1; command2
+        '|',        # command1 | command2
+        '`',        # `command`
+        '$',        # $(command) or $VAR
+        '(',        # sub command
+        ')',        # sub command
+        '<',        # redirect
+        '>',        # redirect
+        '*',        # willcard
+        '?',        # willcard
+        '\\',       # escape
+        '\n',       # break line
+        '\r',       # back line
+    }
+    
+    # Check dangerous characters
+    if any(char in input_str for char in dangerous_chars):
+        return True
+        
+    return False
