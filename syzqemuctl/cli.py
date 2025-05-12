@@ -50,7 +50,8 @@ def cli():
 @cli.command()
 @click.option("--images-home", required=True, help="Images home directory")
 @click.option("--force", is_flag=True, help="Force reinitialize")
-def init(images_home: str, force: bool = False):
+@click.option("--wait", is_flag=True, help="Wait until template creation completes")
+def init(images_home: str, force: bool = False, wait: bool = False):
     """Initialize configuration"""
     if global_conf.is_initialized() and not force:
         console.print(f"[yellow]Warning: {__title__} is already initialized[/yellow]")
@@ -71,7 +72,7 @@ def init(images_home: str, force: bool = False):
     
     # Initialize image manager
     manager = ImageManager(global_conf.images_home)
-    manager.initialize(force)
+    manager.initialize(force=force, blocking=wait)
     console.print("[green]Starting template image creation, this may take a while...[/green]")
     console.print(f"Use '{__title__} status image-template' to check progress")
 

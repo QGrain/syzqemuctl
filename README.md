@@ -51,7 +51,7 @@ Each version without `BUG` tag is usable.
     - Use the kernel in last vm config to start vm by default
 </details>
 
-<details>
+<details open>
 <summary>v0.2.0 ~ progressing</summary>
 - 0.2.0: 2025-04-25
     - Add user friendly instruction for running image and update email
@@ -65,7 +65,9 @@ Each version without `BUG` tag is usable.
     - Fix a missing file in creating vm with specified size and optimize printing
 - 0.2.5: 2025-05-01
     - Add security check for command injection
-</details>
+- 0.2.6: 2025-05-12
+    - Add blocking mode for init command
+</details open>
 
 ## Installation
 

@@ -34,8 +34,12 @@ class ImageManager:
             if utils.download_file(self.SYZKALLER_SCRIPT_URL, str(script_path), executable=True):
                 print(f"Downloaded create-image.sh to {script_path}")
             
-    def initialize(self, force: bool = False) -> None:
-        """Initialize image directory"""
+    def initialize(self, force: bool = False, blocking: bool = False) -> None:
+        """Initialize image directory
+        Args:
+            force: Force reinitialize even if template exists
+            blocking: Wait for template creation to complete
+        """
         self.images_home.mkdir(parents=True, exist_ok=True)
         self._download_create_script()
         
@@ -50,13 +54,24 @@ class ImageManager:
             self.template_dir / "create-image.sh"
         )
         
-        # Run create-image.sh in background (-s 5120 for 5GB image size by default)
+        # Run create-image.sh (-s 5120 for 5GB image size by default)
         print("Starting template image creation, this may take a while...")
-        subprocess.Popen(
-            ["screen", "-dmS", f"{__title__}-template-creation", 
-                "bash", "-c", f"cd {self.template_dir} && ./create-image.sh -s 5120 && touch .template_ready"],
-            start_new_session=True
-        )
+        cmd = f"cd {self.template_dir} && ./create-image.sh -s 5120 && touch .template_ready"
+        
+        if blocking:
+            print(f"Creating template image: {self.template_dir} in blocking mode")
+            try:
+                subprocess.run(["bash", "-c", cmd], check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to create template image: {e}")
+                return
+        else:
+            print(f"Creating template image: {self.template_dir} in non-blocking mode")
+            subprocess.Popen(
+                ["screen", "-dmS", f"{__title__}-template-creation", 
+                    "bash", "-c", cmd],
+                start_new_session=True
+            )
             
     def is_template_ready(self) -> bool:
         """Check if template is ready"""
@@ -65,7 +80,7 @@ class ImageManager:
     def create(self, name: str, size: int = None) -> bool:
         """Create new image"""
         if not self.is_template_ready():
-            print("Template image not ready, please wait...")
+            print(f"Template image not ready, please wait until the creation done. Or run {__title__} init if you have not.")
             return False
             
         target_dir = self.images_home / name
