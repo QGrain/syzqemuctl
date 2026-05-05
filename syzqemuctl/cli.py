@@ -66,7 +66,7 @@ def init(images_home: str, force: bool = False, wait: bool = False):
         console.print(f"[red]Invalid image home: contains dangerous characters[/red]")
         return
     # Initialize config
-    global_conf.initialize(images_home)
+    global_conf.initialize(images_home, force=force)
     console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
     console.print(f"[green]Config file created: {global_conf.config_file}[/green]")
     

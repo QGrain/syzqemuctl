@@ -6,7 +6,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/pypi/v/syzqemuctl?label=version" alt="PyPI - Version">
-<img src="https://img.shields.io/pypi/dw/syzqemuctl" alt="PyPI - Downloads">
+<img src="https://img.shields.io/pypi/dm/syzqemuctl" alt="PyPI - Downloads">
 <img src="https://img.shields.io/github/license/QGrain/syzqemuctl" alt="GitHub License">
 <img src="https://img.shields.io/codacy/grade/683d9c6a11d2492fbaf59ff069b275f2" alt="Codacy grade">
 </p>
@@ -67,7 +67,16 @@ Each version without `BUG` tag is usable.
     - Add security check for command injection
 - 0.2.6: 2025-05-12
     - Add blocking mode for init command
+- 0.2.7: 2025-05-14
+    - Improve API usage
 </details open>
+
+<details>
+<summary>TODOs</summary>
+
+- Merge global_conf into ImageManager
+
+</details>
 
 ## Installation
 
@@ -151,10 +160,12 @@ syzqemuctl delete my-vm
 ### ⭐ As a Python package (API)
 
 ```python
-from syzqemuctl import ImageManager, VM
+from syzqemuctl import global_conf, ImageManager, VM
 
-manager = ImageManager("/path/to/images_home")
-manager.initialize()
+images_home = "/path/to/images_home"
+global_conf.initialize(images_home, force=False) # This could be skipped if you have run `syzqemuctl init --images-home=IMAGES_HOME` in CLI
+manager = ImageManager(images_home)
+manager.initialize(force=False)
 manager.create("my-vm")
 
 # Or just direct specify a created VM and
