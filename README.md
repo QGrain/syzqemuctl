@@ -27,6 +27,7 @@ Each version without `BUG` tag is usable.
 
 <details>
 <summary>v0.1.0 ~ v0.1.10</summary>
+
 - 0.1.0: 2025-01-16
     - Initial release (BUG: entry_point is wrong)
 - 0.1.1: 2025-01-16
@@ -53,6 +54,7 @@ Each version without `BUG` tag is usable.
 
 <details open>
 <summary>v0.2.0 ~ progressing</summary>
+
 - 0.2.0: 2025-04-25
     - Add user friendly instruction for running image and update email
 - 0.2.1: 2025-04-26
@@ -69,6 +71,8 @@ Each version without `BUG` tag is usable.
     - Add blocking mode for init command
 - 0.2.7: 2025-05-14
     - Improve API usage
+- 0.2.8: 2026-05-05
+    - Fix a vm booting bug caused by the cpu inconsistency by adding params in boot_script
 </details open>
 
 <details>

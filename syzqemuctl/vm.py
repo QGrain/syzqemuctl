@@ -118,6 +118,7 @@ exec qemu-system-x86_64 \\
  -hda {self.image_path}/bullseye.img \\
  -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
  -enable-kvm \\
+ -cpu host,migratable=off \\
  -nographic \\
  -m {vm_conf.memory} \\
  -smp {vm_conf.smp} \\
