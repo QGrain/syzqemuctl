@@ -2,8 +2,18 @@ import os
 import re
 import signal
 import subprocess
+import logging
 import paramiko
 from pathlib import Path
+
+def set_paramiko_logging(level: int = logging.CRITICAL) -> None:
+    """Control paramiko log level. Use logging.WARNING or logging.DEBUG to re-enable."""
+    logging.getLogger("paramiko").setLevel(level)
+
+
+# Default: suppress noisy SSH error tracebacks during VM boot polling
+set_paramiko_logging(logging.CRITICAL)
+
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from scp import SCPClient
@@ -157,7 +167,7 @@ exec qemu-system-x86_64 \\
                 capture_output=True, text=True, check=True
             )
             print(f"Cleaned up old screen session: {self.screen_name}")
-        except:
+        except Exception:
             pass
 
         try:
@@ -185,19 +195,41 @@ exec qemu-system-x86_64 \\
             
     def stop(self) -> bool:
         """Stop virtual machine"""
-        if not self.pid_file.exists():
-            return False
-            
+        was_running = self.is_running()
+
+        # Disconnect SSH first (best-effort, non-blocking)
         try:
-            # Disconnect SSH
             self.disconnect()
-            
-            # Read and terminate QEMU process
-            pid = int(self.pid_file.read_text().strip())
-            return utils.kill_process(pid)
-        except ValueError as e:
-            print(f"Failed to stop VM: {e}")
-            return False
+        except Exception:
+            pass
+
+        killed = False
+        if self.pid_file.exists():
+            try:
+                pid = int(self.pid_file.read_text().strip())
+                killed = utils.kill_process(pid)
+            except (ValueError, OSError):
+                pass
+
+        # Always clean up screen session
+        screen_cleaned = False
+        try:
+            result = subprocess.run(
+                ["screen", "-S", self.screen_name, "-X", "quit"],
+                capture_output=True, timeout=5
+            )
+            screen_cleaned = result.returncode == 0
+        except Exception:
+            pass
+
+        # Clean stale pidfile
+        try:
+            if self.pid_file.exists():
+                self.pid_file.unlink()
+        except Exception:
+            pass
+
+        return killed or screen_cleaned or not was_running
             
     def is_running(self) -> bool:
         """Check if VM is running"""
@@ -229,17 +261,15 @@ exec qemu-system-x86_64 \\
             ssh.close()
             return True
         except Exception:
-            print("VM is not ready, please wait...")
-            print("And you would possibly see errors from paramiko, which can be ignored.")
             return False
             
-    def wait_until_ready(self, timeout: int = 120, interval: int = 60) -> bool:
+    def wait_until_ready(self, timeout: int = 120, interval: int = 3) -> bool:
         """Wait for VM to be fully started, return False on timeout"""
         start_time = time.time()
         while time.time() - start_time < timeout:
             if self.is_ready():
                 return True
-            time.sleep(interval)  # Check every interval seconds
+            time.sleep(interval)
         return False
             
     def connect(self, username: str = "root") -> bool:
@@ -286,9 +316,6 @@ exec qemu-system-x86_64 \\
         """Execute command in VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
-        
-        if not self.is_ready():
-            raise RuntimeError("VM is not ready, please wait...")
             
         stdin, stdout, stderr = self._ssh.exec_command(command)
 

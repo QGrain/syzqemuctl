@@ -73,6 +73,11 @@ Each version without `BUG` tag is usable.
     - Improve API usage
 - 0.2.8: 2026-05-05
     - Fix a vm booting bug caused by the cpu inconsistency by adding params in boot_script
+- 0.2.9: 2026-05-11
+      - Suppress paramiko SSH noise and expose `set_paramiko_logging()` for log control
+      - Reduce `wait_until_ready()` default polling interval to 3s and remove redundant `is_ready()` checks
+      - Improve `stop()` cleanup (screen session, stale pidfile) and fix return semantics
+      - Fix bare `except:` clauses in `start()` and `utils.py`, remove noisy prints from `is_ready()`
 </details open>
 
 <details>
@@ -181,7 +186,7 @@ if vm.is_ready():
     pass
 
 # Or use this API to wait:
-if vm.wait_until_ready(timeout=180, interval=60):
+if vm.wait_until_ready(timeout=180):
     pass
 
 # You need to use this context manager to auto-connect/disconnect

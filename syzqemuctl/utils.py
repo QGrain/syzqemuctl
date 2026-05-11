@@ -30,10 +30,10 @@ def check_latest_version() -> Tuple[Optional[str], Optional[str]]:
         if os.path.exists(cache_file) and time.time() - os.path.getmtime(cache_file) < cache_ttl:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 return f.read().strip(), None
-    except:
+    except OSError:
         pass
-    
-    try:        
+
+    try:
         response = requests.get(f"https://pypi.org/pypi/{__title__}/json", timeout=1)
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
@@ -48,7 +48,7 @@ def needs_update(current: str, latest: str) -> bool:
     """Check if update is needed"""
     try:
         return version.parse(latest) > version.parse(current)
-    except:
+    except Exception:
         return False
 
 def get_proxy_settings() -> dict:
