@@ -2,7 +2,7 @@
     syzqemuctl
 </h1>
 
-<p align="center">A command-line tool for managing QEMU virtual machines created through <a href="https://github.com/google/syzkaller" target="_blank">Syzkaller</a>'s `create-image.sh`.</p>
+<p align="center">A command-line tool for managing QEMU disk images and virtual machines created through <a href="https://github.com/google/syzkaller" target="_blank">Syzkaller</a>'s `create-image.sh`.</p>
 
 <p align="center">
 <img src="https://img.shields.io/pypi/v/syzqemuctl?label=version" alt="PyPI - Version">
@@ -52,8 +52,8 @@ Each version without `BUG` tag is usable.
     - Use the kernel in last vm config to start vm by default
 </details>
 
-<details open>
-<summary>v0.2.0 ~ progressing</summary>
+<details>
+<summary>v0.2.0 ~ v0.2.9</summary>
 
 - 0.2.0: 2025-04-25
     - Add user friendly instruction for running image and update email
@@ -78,6 +78,17 @@ Each version without `BUG` tag is usable.
       - Reduce `wait_until_ready()` default polling interval to 3s and remove redundant `is_ready()` checks
       - Improve `stop()` cleanup (screen session, stale pidfile) and fix return semantics
       - Fix bare `except:` clauses in `start()` and `utils.py`, remove noisy prints from `is_ready()`
+</details>
+
+<details open>
+<summary>v0.3.0 ~ progressing</summary>
+
+- 0.3.0: 2026-05-12
+      - Reduce default template size from 5120MB to 3072MB and add `--size` to `init`
+      - Add template-size cache (`image-template-SIZE`) for faster `create` with custom sizes
+      - Add `--force` to `create` to bypass cache and create from scratch
+      - Add `is_image_ready()` API and `.image_ready` flag for monitoring image creation
+      - Distinguish image vs VM concepts in README and unify examples to `my-image`
 </details open>
 
 <details>
@@ -105,6 +116,11 @@ The configuration file is stored in `~/.config/syzqemuctl/config.json`. It conta
 - Images home directory path
 - Default VM settings
 
+## Concepts
+
+- **Image**: A QEMU disk image (e.g., `bullseye.img`) created by `create-image.sh`. Images are stored as directories under `IMAGES_HOME`.
+- **VM**: A running QEMU virtual machine booted from an image with a specified kernel. A VM shares the same name as its underlying image directory.
+
 ## Usage
 
 ### ⭐ As a command-line tool (CLI)
@@ -116,54 +132,54 @@ You can check the usage of `syzqemuctl` or `syzqemuctl CMD` by adding `--help`. 
 syzqemuctl init --images-home /path/to/images
 ```
 
-2. Create a new VM:
+2. Create a new disk image:
 ```bash
-syzqemuctl create my-vm [--size 5120]   # --size INT for specifying the VM disk size (5GB by default)
+syzqemuctl create my-image [--size 3072]   # --size INT for specifying a custom disk size in MB (copies from default template if omitted)
 ```
 
-3. Run the VM:
+3. Run a VM from the image:
 ```bash
-syzqemuctl run my-vm --kernel /path/to/kernel
+syzqemuctl run my-image --kernel /path/to/kernel
 ```
 
-4. Check VM status:
+4. Check image/VM status:
 ```bash
-syzqemuctl status my-vm
+syzqemuctl status my-image
 ```
 
 5. Copy files/dir to/from VM:
 ```bash
-syzqemuctl cp local_file my-vm:/remote/path  # Copy to VM
-syzqemuctl cp my-vm:/remote/file local_path  # Copy from VM
+syzqemuctl cp local_file my-image:/remote/path  # Copy to VM
+syzqemuctl cp my-image:/remote/file local_path  # Copy from VM
 
-syzqemuctl cp local_dir my-vm:/remote/       # Copy local_dir to VM
-syzqemuctl cp local_dir/ my-vm:/remote/      # Copy local_dir/* to VM
+syzqemuctl cp local_dir my-image:/remote/       # Copy local_dir to VM
+syzqemuctl cp local_dir/ my-image:/remote/      # Copy local_dir/* to VM
 
 ```
 
 6. Execute commands in VM:
 ```bash
-syzqemuctl exec my-vm "uname -a" # You'd better wrap the command with double quotes
+syzqemuctl exec my-image "uname -a" # You'd better wrap the command with double quotes
 ```
 
 7. Stop the VM:
 ```bash
-syzqemuctl stop my-vm
+syzqemuctl stop my-image
 ```
 
 8. Restart the VM:
 ```bash
-syzqemuctl restart my-vm
+syzqemuctl restart my-image
 ```
 
-9. List all VMs:
+9. List all images:
 ```bash
 syzqemuctl list
 ```
 
-10. Delete the VM:
+10. Delete the image:
 ```bash
-syzqemuctl delete my-vm
+syzqemuctl delete my-image
 ```
 
 ### ⭐ As a Python package (API)
@@ -175,10 +191,10 @@ images_home = "/path/to/images_home"
 global_conf.initialize(images_home, force=False) # This could be skipped if you have run `syzqemuctl init --images-home=IMAGES_HOME` in CLI
 manager = ImageManager(images_home)
 manager.initialize(force=False)
-manager.create("my-vm")
+manager.create("my-image")
 
-# Or just direct specify a created VM and
-vm = VM("/path/to/images_home/my-vm")
+# Or just direct specify a created image and run a VM from it
+vm = VM("/path/to/images_home/my-image")
 vm.start(kernel="/path/to/kernel")
 
 # Wait several minutes for the VM to be ready, or you can check by:

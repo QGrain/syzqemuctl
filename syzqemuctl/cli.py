@@ -3,6 +3,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 from datetime import datetime
+from typing import Optional
 
 from ._version import __title__, __version__, __author__, __email__
 from .config import global_conf
@@ -51,7 +52,8 @@ def cli():
 @click.option("--images-home", required=True, help="Images home directory")
 @click.option("--force", is_flag=True, help="Force reinitialize")
 @click.option("--wait", is_flag=True, help="Wait until template creation completes")
-def init(images_home: str, force: bool = False, wait: bool = False):
+@click.option("--size", type=int, default=3072, help="Template disk size in MB (default: 3072)")
+def init(images_home: str, force: bool = False, wait: bool = False, size: int = 3072):
     """Initialize configuration"""
     if global_conf.is_initialized() and not force:
         console.print(f"[yellow]Warning: {__title__} is already initialized[/yellow]")
@@ -61,7 +63,7 @@ def init(images_home: str, force: bool = False, wait: bool = False):
         if not click.confirm("Reinitialize?"):
             console.print("[green]Everything kept[/green]")
             return
-            
+
     if utils.check_command_injection(images_home):
         console.print(f"[red]Invalid image home: contains dangerous characters[/red]")
         return
@@ -69,23 +71,27 @@ def init(images_home: str, force: bool = False, wait: bool = False):
     global_conf.initialize(images_home, force=force)
     console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
     console.print(f"[green]Config file created: {global_conf.config_file}[/green]")
-    
+
     # Initialize image manager
     manager = ImageManager(global_conf.images_home)
-    manager.initialize(force=force, blocking=wait)
+    manager.initialize(force=force, blocking=wait, size=size)
     console.print("[green]Starting template image creation, this may take a while...[/green]")
     console.print(f"Use '{__title__} status image-template' to check progress")
 
 @cli.command()
 @click.argument("name")
-@click.option("--size", type=int, help="Disk size, 5120 by default (i.e., 5120MB)")
-def create(name: str, size: int):
+@click.option("--size", type=int, help="Disk size in MB. If unspecified, copies from default template. If specified and cache exists, copies from cache; otherwise creates from scratch.")
+@click.option("--force", is_flag=True, help="Force creation from scratch, bypassing cache")
+def create(name: str, size: Optional[int], force: bool):
     """Create new image"""
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
     manager = ImageManager(global_conf.images_home)
-    manager.create(name, size)
+    if manager.create(name, size, force=force):
+        console.print(f"[green]Successfully created image: {name}[/green]")
+    else:
+        console.print(f"[red]Failed to create image: {name}[/red]")
 
 @cli.command()
 @click.argument("name")
@@ -109,23 +115,23 @@ def status(name: str):
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Property")
         table.add_column("Value")
-        
+
         table.add_row("Name", info.name)
         table.add_row("Path", str(info.path))
-        
+
         # Handle template status
         if info.is_template:
             created_time = datetime.fromtimestamp(info.created_at).strftime("%Y-%m-%d %H:%M:%S")
-            if info.template_ready:
+            if info.image_ready:
                 table.add_row("Created At", created_time)
                 table.add_row("Template Status", "[green]Ready[/green]")
             else:
                 table.add_row("Created At", f"{created_time} [yellow]Creating...[/yellow]")
                 table.add_row("Template Status", "[yellow]Initializing[/yellow]")
         else:
-            table.add_row("Created At", 
+            table.add_row("Created At",
                          datetime.fromtimestamp(info.created_at).strftime("%Y-%m-%d %H:%M:%S"))
-            
+
         # Show running status
         creation_screen = f"{__title__}-{name}-creation"
         if utils.check_screen_exists(creation_screen):
@@ -136,7 +142,7 @@ def status(name: str):
                 table.add_row("Status", "[green]Running[/green]")
             else:
                 table.add_row("Status", "[yellow]Starting[/yellow]")
-                
+
             if vm_conf := vm.get_last_vm_config():
                 table.add_row("Kernel", vm_conf.kernel)
                 table.add_row("SSH Port", str(vm_conf.port))
@@ -146,7 +152,14 @@ def status(name: str):
             table.add_row("Console", f"screen -r {vm.screen_name}")
         else:
             table.add_row("Status", "[yellow]Not Running[/yellow]")
-            
+
+        # Show image ready status for non-templates
+        if not info.is_template:
+            if info.image_ready:
+                table.add_row("Image Ready", "[green]Yes[/green]")
+            else:
+                table.add_row("Image Ready", "[yellow]Creating...[/yellow]")
+
         console.print(table)
     else:
         console.print(f"[red]Error: Image {name} not found[/red]")
@@ -173,7 +186,7 @@ def list():
     # Check if only template exists
     if len(images) == 1 and images[0].is_template:
         template = images[0]
-        if not template.template_ready:
+        if not template.image_ready:
             console.print("[yellow]Template image is being created...[/yellow]")
             console.print(f"Use '{__title__} status image-template' to check progress\n")
         else:
@@ -189,23 +202,35 @@ def list():
     table.add_column("Status")
     table.add_column("PID")
     
-    # Show template status first
-    template = next((img for img in images if img.is_template), None)
-    if template:
+    # Show template and cache templates first
+    templates = [img for img in images if img.is_template]
+    for template in templates:
         created_time = datetime.fromtimestamp(template.created_at).strftime("%Y-%m-%d %H:%M:%S")
-        if not template.template_ready:
-            created_time = f"{created_time} [yellow]Creating...[/yellow]"
-            status = "[yellow]Initializing[/yellow]"
+        if template.is_cache:
+            if not template.image_ready:
+                created_time = f"{created_time} [yellow]Creating...[/yellow]"
+                status = "[yellow]Cache (Creating)[/yellow]"
+            else:
+                status = "[dim]Cache (Ready)[/dim]"
+            table.add_row(
+                template.name,
+                created_time,
+                status,
+                str(template.pid) if template.pid else "-"
+            )
         else:
-            status = "[green]Ready[/green]" if template.running else "[yellow]Not Running[/yellow]"
-            
-        table.add_row(
-            "image-template",
-            created_time,
-            status,
-            str(template.pid) if template.pid else "-"
-        )
-        
+            if not template.image_ready:
+                created_time = f"{created_time} [yellow]Creating...[/yellow]"
+                status = "[yellow]Initializing[/yellow]"
+            else:
+                status = "[green]Ready[/green]" if template.running else "[yellow]Not Running[/yellow]"
+            table.add_row(
+                "image-template",
+                created_time,
+                status,
+                str(template.pid) if template.pid else "-"
+            )
+
     # Show other images
     for img in [img for img in images if not img.is_template]:
         status = "[green]Running[/green]" if img.running else "[yellow]Not Running[/yellow]"
@@ -240,7 +265,12 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int):
     if info.running:
         console.print(f"[red]Error: Image {name} is already running[/red]")
         return
-        
+
+    # Check if image is ready
+    if not info.image_ready:
+        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
+        return
+
     # Create VM instance and start
     vm = VM(str(info.path))  
     if vm.start(kernel, port, mem, smp):
@@ -283,6 +313,10 @@ def restart(name: str):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
     
+    if not info.image_ready:
+        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
+        return
+
     if not info.running:
         console.print(f"[yellow]Warning: Image {name} is not running[/yellow]")
         return
@@ -334,10 +368,14 @@ def cp(src: str, dst: str):
         console.print(f"[red]Error: Image {image_name} not found[/red]")
         return
         
+    if not info.image_ready:
+        console.print(f"[red]Error: Image {image_name} is not ready yet[/red]")
+        return
+
     if not info.running:
         console.print(f"[red]Error: Image {image_name} is not running[/red]")
         return
-        
+
     # Handle file transfer
     vm = VM(str(info.path))
     if not vm.is_ready():
@@ -372,10 +410,14 @@ def exec(name: str, command: str):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
         
+    if not info.image_ready:
+        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
+        return
+
     if not info.running:
         console.print(f"[red]Error: Image {name} is not running[/red]")
         return
-        
+
     # Execute command
     vm = VM(str(info.path))
         
