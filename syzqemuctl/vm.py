@@ -32,6 +32,7 @@ class VMConfig:
     port: int
     memory: str = DEFAULT_MEM
     smp: int = DEFAULT_SMP
+    snapshot: bool = False
     
     @classmethod
     def from_boot_script(cls, script_path: Path) -> Optional["VMConfig"]:
@@ -121,12 +122,13 @@ class VM:
         
     def _generate_boot_script(self, vm_conf: VMConfig) -> None:
         """Generate boot script"""
+        snapshot_arg = " -snapshot \\\n" if vm_conf.snapshot else ""
         script_content = f"""#!/bin/bash
 exec qemu-system-x86_64 \\
  -kernel {vm_conf.kernel}/arch/x86/boot/bzImage \\
  -append "console=ttyS0 root=/dev/sda debug earlyprintk=serial slub_debug=QUZ" \\
  -hda {self.image_path}/bullseye.img \\
- -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
+{snapshot_arg} -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
  -enable-kvm \\
  -cpu host,migratable=off \\
  -nographic \\
@@ -138,12 +140,12 @@ exec qemu-system-x86_64 \\
         self.boot_script.write_text(script_content)
         self.boot_script.chmod(0o755)
         
-    def start(self, kernel: str = None, port: int = None, mem: str = None, smp: int = None) -> bool:
+    def start(self, kernel: str = None, port: int = None, mem: str = None, smp: int = None, snapshot: bool = False) -> bool:
         """Start virtual machine"""
         if self.is_running():
             print("VM is already running")
             return False
-        
+
         # Load last boot vm config
         last_vm_conf = self.get_last_vm_config()
         if last_vm_conf:
@@ -157,8 +159,8 @@ exec qemu-system-x86_64 \\
             smp = smp or VMConfig.DEFAULT_SMP
         assert kernel, "Kernel path is required for the first boot"
         # Generate boot script and run in screen
-        self._generate_boot_script(VMConfig(kernel, port, mem, smp))
-        print(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}")
+        self._generate_boot_script(VMConfig(kernel, port, mem, smp, snapshot))
+        print(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}, snapshot={snapshot}")
         
         try:
             # Clean up old screen session

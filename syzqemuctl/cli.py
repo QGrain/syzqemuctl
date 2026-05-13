@@ -250,7 +250,8 @@ def list():
 @click.option("--port", type=int, help="SSH port")
 @click.option("--mem", help="Memory size")
 @click.option("--smp", type=int, help="CPU cores")
-def run(name: str, kernel: str, port: int, mem: str, smp: int):
+@click.option("--snapshot", is_flag=True, help="Run with snapshot mode (changes discarded on shutdown)")
+def run(name: str, kernel: str, port: int, mem: str, smp: int, snapshot: bool):
     """Run virtual machine"""
     if utils.check_command_injection(name) or utils.check_command_injection(kernel) or utils.check_command_injection(mem):
         console.print(f"[red]Invalid input: contains dangerous characters[/red]")
@@ -272,8 +273,8 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int):
         return
 
     # Create VM instance and start
-    vm = VM(str(info.path))  
-    if vm.start(kernel, port, mem, smp):
+    vm = VM(str(info.path))
+    if vm.start(kernel, port, mem, smp, snapshot):
         console.print("[green]Starting VM... SSH will be available soon[/green]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
     else:
@@ -330,7 +331,7 @@ def restart(name: str):
     
     # Restart VM with the previous configuration
     if vm.start():
-        console.print("[yellow]Restarting VM, this may take some time[/yellow]")
+        console.print("[yellow]Restarting VM with last boot configuration (no snapshot by default), this may take some time[/yellow]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
     else:
         console.print("[red]Failed to restart VM[/red]")

@@ -89,6 +89,9 @@ Each version without `BUG` tag is usable.
       - Add `--force` to `create` to bypass cache and create from scratch
       - Add `is_image_ready()` API and `.image_ready` flag for monitoring image creation
       - Distinguish image vs VM concepts in README and unify examples to `my-image`
+- 0.3.1: 2026-05-13
+      - Add `--snapshot` flag to `run` for ephemeral VM sessions (changes discarded on shutdown)
+      - Snapshot flag is not inherited from previous boots; specify it explicitly when needed
 </details open>
 
 <details>
@@ -140,6 +143,11 @@ syzqemuctl create my-image [--size 3072]   # --size INT for specifying a custom 
 3. Run a VM from the image:
 ```bash
 syzqemuctl run my-image --kernel /path/to/kernel
+```
+
+   Run with snapshot mode (all disk changes discarded on shutdown):
+```bash
+syzqemuctl run my-image --kernel /path/to/kernel --snapshot
 ```
 
 4. Check image/VM status:
