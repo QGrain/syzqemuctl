@@ -65,13 +65,14 @@ class VM:
     PORT_START = 20000
     PORT_END = 30000
     
-    def __init__(self, image_path: str):
+    def __init__(self, image_path: str, verbose: bool = False):
         self.image_path = Path(image_path)
         self.pid_file = self.image_path / "vm.pid"
         self.log_file = self.image_path / "vm.log"
         self.boot_script = self.image_path / "boot.sh"
         self.screen_name = f"{__title__}-{self.image_path.name}"
-        
+        self.verbose = verbose
+
         # SSH related attributes
         self._ssh = None
         self._scp = None
@@ -160,7 +161,7 @@ exec qemu-system-x86_64 \\
         assert kernel, "Kernel path is required for the first boot"
         # Generate boot script and run in screen
         self._generate_boot_script(VMConfig(kernel, port, mem, smp, snapshot))
-        print(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}, snapshot={snapshot}")
+        utils.log_info(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}, snapshot={snapshot}", self.verbose)
         
         try:
             # Clean up old screen session
@@ -168,7 +169,7 @@ exec qemu-system-x86_64 \\
                 ["screen", "-S", self.screen_name, "-X", "quit"],
                 capture_output=True, text=True, check=True
             )
-            print(f"Cleaned up old screen session: {self.screen_name}")
+            utils.log_info(f"Cleaned up old screen session: {self.screen_name}", self.verbose)
         except Exception:
             pass
 
@@ -188,8 +189,8 @@ exec qemu-system-x86_64 \\
             if not self.is_running():
                 raise RuntimeError("Failed to start VM: PID file not generated")
                 
-            print(f"Tip: Use 'screen -r {self.screen_name}' to view VM console")
-            print(f"     Use Ctrl+A,D to detach from console")
+            utils.log_info(f"Tip: Use 'screen -r {self.screen_name}' to view VM console", self.verbose)
+            utils.log_info(f"     Use Ctrl+A,D to detach from console", self.verbose)
             return True
         except Exception as e:
             print(f"Failed to start VM: {e}")
@@ -281,7 +282,7 @@ exec qemu-system-x86_64 \\
             return False
             
         if not self.is_ready():
-            print("VM is starting, please wait...")
+            utils.log_info("VM is starting, please wait...", self.verbose)
             return False
             
         if not self._key_file.exists():

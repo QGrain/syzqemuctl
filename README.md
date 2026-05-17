@@ -92,6 +92,10 @@ Each version without `BUG` tag is usable.
 - 0.3.1: 2026-05-13
       - Add `--snapshot` flag to `run` for ephemeral VM sessions (changes discarded on shutdown)
       - Snapshot flag is not inherited from previous boots; specify it explicitly when needed
+- 0.3.2: 2026-05-16
+      - Add `verbose` parameter to `VM`, `ImageManager`, and `global_conf.initialize()`
+      - API mode defaults to quiet (`verbose=False`); informational prints are suppressed while errors are always preserved
+      - CLI mode remains verbose (`verbose=True`) to keep existing user experience
 </details open>
 
 <details>
@@ -196,12 +200,14 @@ syzqemuctl delete my-image
 from syzqemuctl import global_conf, ImageManager, VM
 
 images_home = "/path/to/images_home"
-global_conf.initialize(images_home, force=False) # This could be skipped if you have run `syzqemuctl init --images-home=IMAGES_HOME` in CLI
+# API defaults to quiet (verbose=False); pass verbose=True to see informational prints
+global_conf.initialize(images_home, force=False)
 manager = ImageManager(images_home)
 manager.initialize(force=False)
 manager.create("my-image")
 
 # Or just direct specify a created image and run a VM from it
+# Use verbose=True if you want to see boot script and screen session tips
 vm = VM("/path/to/images_home/my-image")
 vm.start(kernel="/path/to/kernel")
 

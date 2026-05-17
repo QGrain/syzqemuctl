@@ -18,10 +18,11 @@ class GlobalConfig:
         os.makedirs(self.DEFAULT_CONFIG_DIR, exist_ok=True)
         os.makedirs(self.DEFAULT_CACHE_DIR, exist_ok=True)
         
-    def initialize(self, images_home: str, force: bool, **kwargs) -> None:
+    def initialize(self, images_home: str, force: bool, verbose: bool = False, **kwargs) -> None:
         """Initialize configuration"""
         if self.is_initialized() and not force:
-            print(f"Configuration {self.config_file} already exists, use --force to overwrite")
+            if verbose:
+                print(f"Configuration {self.config_file} already exists, use --force to overwrite")
             return
 
         self._settings = {

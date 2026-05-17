@@ -68,12 +68,12 @@ def init(images_home: str, force: bool = False, wait: bool = False, size: int = 
         console.print(f"[red]Invalid image home: contains dangerous characters[/red]")
         return
     # Initialize config
-    global_conf.initialize(images_home, force=force)
+    global_conf.initialize(images_home, force=force, verbose=True)
     console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
     console.print(f"[green]Config file created: {global_conf.config_file}[/green]")
 
     # Initialize image manager
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     manager.initialize(force=force, blocking=wait, size=size)
     console.print("[green]Starting template image creation, this may take a while...[/green]")
     console.print(f"Use '{__title__} status image-template' to check progress")
@@ -87,7 +87,7 @@ def create(name: str, size: Optional[int], force: bool):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if manager.create(name, size, force=force):
         console.print(f"[green]Successfully created image: {name}[/green]")
     else:
@@ -100,7 +100,7 @@ def delete(name: str):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     manager.delete(name)
 
 @cli.command()
@@ -110,7 +110,7 @@ def status(name: str):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if info := manager.get_image_info(name):
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Property")
@@ -137,7 +137,7 @@ def status(name: str):
         if utils.check_screen_exists(creation_screen):
             table.add_row("Status", "[yellow]Creating[/yellow]")
         elif info.running:
-            vm = VM(str(info.path))
+            vm = VM(str(info.path), verbose=True)
             if vm.is_ready():
                 table.add_row("Status", "[green]Running[/green]")
             else:
@@ -167,7 +167,7 @@ def status(name: str):
 @cli.command()
 def list():
     """List all images"""
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     images = manager.list_images()
     
     # Print global config info
@@ -257,7 +257,7 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int, snapshot: bool):
         console.print(f"[red]Invalid input: contains dangerous characters[/red]")
         return
     # Check if image exists
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
@@ -273,7 +273,7 @@ def run(name: str, kernel: str, port: int, mem: str, smp: int, snapshot: bool):
         return
 
     # Create VM instance and start
-    vm = VM(str(info.path))
+    vm = VM(str(info.path), verbose=True)
     if vm.start(kernel, port, mem, smp, snapshot):
         console.print("[green]Starting VM... SSH will be available soon[/green]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
@@ -287,7 +287,7 @@ def stop(name: str):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
@@ -296,7 +296,7 @@ def stop(name: str):
         console.print(f"[yellow]Warning: Image {name} is not running[/yellow]")
         return
         
-    vm = VM(str(info.path))
+    vm = VM(str(info.path), verbose=True)
     if vm.stop():
         console.print("[green]VM stopped[/green]")
     else:
@@ -309,7 +309,7 @@ def restart(name: str):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
@@ -323,7 +323,7 @@ def restart(name: str):
         return
 
     # Stop VM
-    vm = VM(str(info.path))
+    vm = VM(str(info.path), verbose=True)
     if not vm.stop():
         console.print("[red]Failed to stop VM[/red]")
         return
@@ -364,7 +364,7 @@ def cp(src: str, dst: str):
         
     # Get image info
     image_name = src_image or dst_image
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if not (info := manager.get_image_info(image_name)):
         console.print(f"[red]Error: Image {image_name} not found[/red]")
         return
@@ -378,7 +378,7 @@ def cp(src: str, dst: str):
         return
 
     # Handle file transfer
-    vm = VM(str(info.path))
+    vm = VM(str(info.path), verbose=True)
     if not vm.is_ready():
         console.print(f"[yellow]Error: Image {image_name} is starting, please wait[/yellow]")
         return
@@ -406,7 +406,7 @@ def exec(name: str, command: str):
     if utils.check_command_injection(name):
         console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
         return
-    manager = ImageManager(global_conf.images_home)
+    manager = ImageManager(global_conf.images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
         console.print(f"[red]Error: Image {name} not found[/red]")
         return
@@ -420,7 +420,7 @@ def exec(name: str, command: str):
         return
 
     # Execute command
-    vm = VM(str(info.path))
+    vm = VM(str(info.path), verbose=True)
         
     with vm:
         try:

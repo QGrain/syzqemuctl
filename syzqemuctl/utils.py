@@ -10,6 +10,15 @@ import subprocess
 from ._version import __version__, __title__
 from .config import global_conf
 
+def log_info(msg: str, verbose: bool = True) -> None:
+    """Print informational message only when verbose is enabled"""
+    if verbose:
+        print(msg)
+
+def log_error(msg: str) -> None:
+    """Always print error messages"""
+    print(msg)
+
 def format_size(size: int) -> str:
     """Format file size"""
     for unit in ["B", "KB", "MB", "GB"]:
@@ -80,7 +89,7 @@ def download_file(url: str, target_path: str, executable: bool = False) -> None:
             
         return True
     except Exception as e:
-        print(f"Download failed: {e}")
+        log_error(f"Download failed: {e}")
         return False
 
 def wait_for_process_end(pid: int, timeout: float = 5.0, check_interval: float = 0.1) -> bool:

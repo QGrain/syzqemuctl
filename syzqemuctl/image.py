@@ -24,16 +24,17 @@ class ImageManager:
     # use create-image.sh from a specified commit
     SYZKALLER_SCRIPT_URL = "https://github.com/google/syzkaller/raw/32d786e786e2caf2ba9704bf55562e65b1a4e70c/tools/create-image.sh"
     
-    def __init__(self, images_home: str):
+    def __init__(self, images_home: str, verbose: bool = False):
         self.images_home = Path(images_home)
         self.template_default_dir = self.images_home / "image-template"
+        self.verbose = verbose
 
     def _download_create_script(self) -> None:
         """Download create-image.sh script"""
         script_path = self.images_home / "create-image.sh"
         if not script_path.exists():
             if utils.download_file(self.SYZKALLER_SCRIPT_URL, str(script_path), executable=True):
-                print(f"Downloaded create-image.sh to {script_path}")
+                utils.log_info(f"Downloaded create-image.sh to {script_path}", self.verbose)
 
     def initialize(self, force: bool = False, blocking: bool = False, size: int = 3072) -> None:
         """Initialize image directory
@@ -46,7 +47,7 @@ class ImageManager:
         self._download_create_script()
 
         if self.is_image_ready("image-template") and not force:
-            print("Template image already exists, initialization complete")
+            utils.log_info("Template image already exists, initialization complete", self.verbose)
             return
 
         # Create template directory
@@ -57,18 +58,18 @@ class ImageManager:
         )
 
         # Run create-image.sh (-s size for specified image size)
-        print("Starting template image creation, this may take a while...")
+        utils.log_info("Starting template image creation, this may take a while...", self.verbose)
         cmd = f"cd {self.template_default_dir} && ./create-image.sh -s {size} && touch .image_ready"
 
         if blocking:
-            print(f"Creating template image: {self.template_default_dir} in blocking mode")
+            utils.log_info(f"Creating template image: {self.template_default_dir} in blocking mode", self.verbose)
             try:
                 subprocess.run(["bash", "-c", cmd], check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Failed to create template image: {e}")
                 return
         else:
-            print(f"Creating template image: {self.template_default_dir} in non-blocking mode")
+            utils.log_info(f"Creating template image: {self.template_default_dir} in non-blocking mode", self.verbose)
             subprocess.Popen(
                 ["screen", "-dmS", f"{__title__}-template-creation",
                     "bash", "-c", cmd],
@@ -126,11 +127,11 @@ class ImageManager:
         if size is None:
             # Copy from default template
             try:
-                print(f"Creating image: {name}")
+                utils.log_info(f"Creating image: {name}", self.verbose)
                 if not self._copy_core_image_files(self.template_default_dir, target_dir):
                     return False
                 self._touch_ready(target_dir)
-                print(f"Successfully created image: {name}")
+                utils.log_info(f"Successfully created image: {name}", self.verbose)
                 return True
             except Exception as e:
                 print(f"Failed to create image: {e}")
@@ -151,7 +152,7 @@ class ImageManager:
                     self.images_home / "create-image.sh",
                     target_dir / "create-image.sh"
                 )
-                print(f"Creating image: {name} with size {size}MB from scratch (cache bypassed)")
+                utils.log_info(f"Creating image: {name} with size {size}MB from scratch (cache bypassed)", self.verbose)
                 try:
                     subprocess.Popen(
                         ["screen", "-dmS", f"{__title__}-{name}-creation",
@@ -166,17 +167,17 @@ class ImageManager:
             if self.is_image_ready(f"image-template-{size}"):
                 # Copy from cache
                 try:
-                    print(f"Creating image: {name} from template cache (size {size}MB)")
+                    utils.log_info(f"Creating image: {name} from template cache (size {size}MB)", self.verbose)
                     if not self._copy_core_image_files(template_size_dir, target_dir):
                         return False
                     self._touch_ready(target_dir)
-                    print(f"Successfully created image: {name}")
+                    utils.log_info(f"Successfully created image: {name}", self.verbose)
                     return True
                 except Exception as e:
                     print(f"Failed to create image: {e}")
                     return False
             elif template_size_dir.exists():
-                print(f"Template for size {size} is being created, please wait or use --force to create from scratch")
+                utils.log_info(f"Template for size {size} is being created, please wait or use --force to create from scratch", self.verbose)
                 return False
             else:
                 # Create from scratch and cache
@@ -190,10 +191,10 @@ class ImageManager:
                 try:
                     template_size_dir.mkdir(exist_ok=False)
                 except FileExistsError:
-                    print(f"Template for size {size} is being created, please wait or use --force to create from scratch")
+                    utils.log_info(f"Template for size {size} is being created, please wait or use --force to create from scratch", self.verbose)
                     return False
 
-                print(f"Creating image: {name} with size {size}MB from scratch")
+                utils.log_info(f"Creating image: {name} with size {size}MB from scratch", self.verbose)
                 cmd = (
                     f"cd {target_dir} && ./create-image.sh -s {size} && "
                     f"touch .image_ready && "
@@ -221,7 +222,7 @@ class ImageManager:
             
         try:
             shutil.rmtree(target_dir)
-            print(f"Successfully deleted image: {name}")
+            utils.log_info(f"Successfully deleted image: {name}", self.verbose)
             return True
         except Exception as e:
             print(f"Failed to delete image: {e}")
