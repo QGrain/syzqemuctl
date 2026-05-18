@@ -96,6 +96,11 @@ Each version without `BUG` tag is usable.
       - Add `verbose` parameter to `VM`, `ImageManager`, and `global_conf.initialize()`
       - API mode defaults to quiet (`verbose=False`); informational prints are suppressed while errors are always preserved
       - CLI mode remains verbose (`verbose=True`) to keep existing user experience
+- 0.3.3: 2026-05-18
+      - Add `net.ifnames=0` to kernel cmdline for stable guest NIC naming (`eth0`)
+      - Use process substitution (`exec > >(tee)`) in boot script so QEMU is a direct child of screen
+      - Extend `start()` polling to 30s and add failure cleanup (screen + pidfile)
+      - Add explicit `banner_timeout` and `auth_timeout` to `is_ready()` (5s) and `connect()` (10s)
 </details open>
 
 <details>

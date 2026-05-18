@@ -124,10 +124,12 @@ class VM:
     def _generate_boot_script(self, vm_conf: VMConfig) -> None:
         """Generate boot script"""
         snapshot_arg = " -snapshot \\\n" if vm_conf.snapshot else ""
+        kernel_args = "net.ifnames=0 console=ttyS0 root=/dev/sda debug earlyprintk=serial slub_debug=QUZ"
         script_content = f"""#!/bin/bash
+exec > >(tee {self.log_file}) 2>&1
 exec qemu-system-x86_64 \\
  -kernel {vm_conf.kernel}/arch/x86/boot/bzImage \\
- -append "console=ttyS0 root=/dev/sda debug earlyprintk=serial slub_debug=QUZ" \\
+ -append "{kernel_args}" \\
  -hda {self.image_path}/bullseye.img \\
 {snapshot_arg} -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
  -enable-kvm \\
@@ -135,8 +137,7 @@ exec qemu-system-x86_64 \\
  -nographic \\
  -m {vm_conf.memory} \\
  -smp {vm_conf.smp} \\
- -pidfile {self.pid_file} \\
- 2>&1 | tee {self.log_file}
+ -pidfile {self.pid_file}
 """
         self.boot_script.write_text(script_content)
         self.boot_script.chmod(0o755)
@@ -179,21 +180,34 @@ exec qemu-system-x86_64 \\
                 ["screen", "-dmS", self.screen_name, str(self.boot_script)],
                 check=True
             )
-            
-            # Wait for PID file (max 5 seconds)
-            for _ in range(50):
-                if self.pid_file.exists():
+
+            # Wait for PID file and process readiness (max 30 seconds)
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                if self.pid_file.exists() and self.is_running():
                     break
                 time.sleep(0.1)
-            
-            if not self.is_running():
+            else:
                 raise RuntimeError("Failed to start VM: PID file not generated")
-                
+
             utils.log_info(f"Tip: Use 'screen -r {self.screen_name}' to view VM console", self.verbose)
             utils.log_info(f"     Use Ctrl+A,D to detach from console", self.verbose)
             return True
         except Exception as e:
             print(f"Failed to start VM: {e}")
+            # Best-effort cleanup on failure
+            try:
+                subprocess.run(
+                    ["screen", "-S", self.screen_name, "-X", "quit"],
+                    capture_output=True, timeout=5
+                )
+            except Exception:
+                pass
+            try:
+                if self.pid_file.exists():
+                    self.pid_file.unlink()
+            except Exception:
+                pass
             return False
             
     def stop(self) -> bool:
@@ -259,7 +273,9 @@ exec qemu-system-x86_64 \\
                 port=vm_conf.port,
                 username="root",
                 key_filename=str(self._key_file),
-                timeout=3  # Short timeout
+                timeout=5,
+                banner_timeout=5,
+                auth_timeout=5,
             )
             ssh.close()
             return True
@@ -302,7 +318,9 @@ exec qemu-system-x86_64 \\
                 port=vm_conf.port,
                 username=username,
                 key_filename=str(self._key_file),
-                timeout=10
+                timeout=15,
+                banner_timeout=10,
+                auth_timeout=10,
             )
             return True
         except Exception as e:
