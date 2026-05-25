@@ -74,33 +74,39 @@ Each version without `BUG` tag is usable.
 - 0.2.8: 2026-05-05
     - Fix a vm booting bug caused by the cpu inconsistency by adding params in boot_script
 - 0.2.9: 2026-05-11
-      - Suppress paramiko SSH noise and expose `set_paramiko_logging()` for log control
-      - Reduce `wait_until_ready()` default polling interval to 3s and remove redundant `is_ready()` checks
-      - Improve `stop()` cleanup (screen session, stale pidfile) and fix return semantics
-      - Fix bare `except:` clauses in `start()` and `utils.py`, remove noisy prints from `is_ready()`
+    - Suppress paramiko SSH noise and expose `set_paramiko_logging()` for log control
+    - Reduce `wait_until_ready()` default polling interval to 3s and remove redundant `is_ready()` checks
+    - Improve `stop()` cleanup (screen session, stale pidfile) and fix return semantics
+    - Fix bare `except:` clauses in `start()` and `utils.py`, remove noisy prints from `is_ready()`
 </details>
 
 <details open>
 <summary>v0.3.0 ~ progressing</summary>
 
 - 0.3.0: 2026-05-12
-      - Reduce default template size from 5120MB to 3072MB and add `--size` to `init`
-      - Add template-size cache (`image-template-SIZE`) for faster `create` with custom sizes
-      - Add `--force` to `create` to bypass cache and create from scratch
-      - Add `is_image_ready()` API and `.image_ready` flag for monitoring image creation
-      - Distinguish image vs VM concepts in README and unify examples to `my-image`
+    - Reduce default template size from 5120MB to 3072MB and add `--size` to `init`
+    - Add template-size cache (`image-template-SIZE`) for faster `create` with custom sizes
+    - Add `--force` to `create` to bypass cache and create from scratch
+    - Add `is_image_ready()` API and `.image_ready` flag for monitoring image creation
+    - Distinguish image vs VM concepts in README and unify examples to `my-image`
 - 0.3.1: 2026-05-13
-      - Add `--snapshot` flag to `run` for ephemeral VM sessions (changes discarded on shutdown)
-      - Snapshot flag is not inherited from previous boots; specify it explicitly when needed
+    - Add `--snapshot` flag to `run` for ephemeral VM sessions (changes discarded on shutdown)
+    - Snapshot flag is not inherited from previous boots; specify it explicitly when needed
 - 0.3.2: 2026-05-16
-      - Add `verbose` parameter to `VM`, `ImageManager`, and `global_conf.initialize()`
-      - API mode defaults to quiet (`verbose=False`); informational prints are suppressed while errors are always preserved
-      - CLI mode remains verbose (`verbose=True`) to keep existing user experience
+    - Add `verbose` parameter to `VM`, `ImageManager`, and `global_conf.initialize()`
+    - API mode defaults to quiet (`verbose=False`); informational prints are suppressed while errors are always preserved
+    - CLI mode remains verbose (`verbose=True`) to keep existing user experience
 - 0.3.3: 2026-05-18
-      - Add `net.ifnames=0` to kernel cmdline for stable guest NIC naming (`eth0`)
-      - Use process substitution (`exec > >(tee)`) in boot script so QEMU is a direct child of screen
-      - Extend `start()` polling to 30s and add failure cleanup (screen + pidfile)
-      - Add explicit `banner_timeout` and `auth_timeout` to `is_ready()` (5s) and `connect()` (10s)
+    - Add `net.ifnames=0` to kernel cmdline for stable guest NIC naming (`eth0`)
+    - Use process substitution (`exec > >(tee)`) in boot script so QEMU is a direct child of screen
+    - Extend `start()` polling to 30s and add failure cleanup (screen + pidfile)
+    - Add explicit `banner_timeout` and `auth_timeout` to `is_ready()` (5s) and `connect()` (10s)
+- 0.3.4: 2026-05-25
+    - Expose public `timeout` support on `VM.execute()`, `VM.copy_to_vm()`, and `VM.copy_from_vm()`
+    - Treat `timeout` as a total operation limit and keep existing behavior unchanged when omitted
+    - Drain `stdout` and `stderr` concurrently in `VM.execute()` to avoid dual-stream blocking on large output
+    - Abort the current SSH/SCP connection on timeout so callers can recover with a fresh `connect()`
+    - Extend `VM.stop()` with `wait` and `force` options, and add `VM.cleanup_runtime()` for strong runtime cleanup
 </details open>
 
 <details>
@@ -226,9 +232,20 @@ if vm.wait_until_ready(timeout=180):
 
 # You need to use this context manager to auto-connect/disconnect
 with vm:
-    vm.copy_to_vm("/path/to/local/file", "/path/to/vm/remote/file")
-    stdout, stderr = vm.execute("uname -a")
+    vm.copy_to_vm("/path/to/local/file", "/path/to/vm/remote/file", timeout=600)
+    stdout, stderr = vm.execute("uname -a", timeout=30)
     print(f"stdout: {stdout}\nstderr: {stderr}")
+
+# timeout is optional and defaults to None.
+# It limits the total duration of a single execute/copy operation.
+# After a timeout, reconnect before issuing the next SSH/SCP request.
+
+# Use wait=True and force=True when you need runtime cleanup to fully converge.
+vm.stop(wait=True, force=True, timeout=20)
+vm.cleanup_runtime(timeout=20)
+
+# force=True is useful after a failed start.
+# wait=True is useful before reusing an image.
 ```
 
 ## License

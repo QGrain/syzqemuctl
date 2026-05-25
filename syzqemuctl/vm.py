@@ -3,8 +3,11 @@ import re
 import signal
 import subprocess
 import logging
+import socket
+import threading
 import paramiko
 from pathlib import Path
+from contextlib import contextmanager
 
 def set_paramiko_logging(level: int = logging.CRITICAL) -> None:
     """Control paramiko log level. Use logging.WARNING or logging.DEBUG to re-enable."""
@@ -16,7 +19,7 @@ set_paramiko_logging(logging.CRITICAL)
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
-from scp import SCPClient
+from scp import SCPClient, SCPException
 import time
 
 from . import __title__
@@ -210,43 +213,129 @@ exec qemu-system-x86_64 \\
                 pass
             return False
             
-    def stop(self) -> bool:
-        """Stop virtual machine"""
-        was_running = self.is_running()
+    def _screen_session_ids(self) -> list[str]:
+        """Return screen session ids that belong to this VM"""
+        try:
+            result = subprocess.run(
+                ["screen", "-ls"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except Exception:
+            return []
 
-        # Disconnect SSH first (best-effort, non-blocking)
+        sessions = []
+        for line in result.stdout.splitlines():
+            if self.screen_name not in line:
+                continue
+            token = line.strip().split()
+            if token:
+                sessions.append(token[0])
+        return sessions
+
+    def _qemu_pids_for_image(self) -> list[int]:
+        """Return qemu-system pids whose cmdline points at this VM image"""
+        image_file = self.image_path / "bullseye.img"
+        candidates = {str(image_file), str(image_file.resolve())}
+        pids = []
+
+        for proc_dir in Path("/proc").iterdir():
+            if not proc_dir.name.isdigit():
+                continue
+            try:
+                cmdline = (proc_dir / "cmdline").read_bytes().split(b"\0")
+            except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+                continue
+            if not cmdline or not cmdline[0]:
+                continue
+
+            executable = Path(cmdline[0].decode(errors="ignore")).name
+            if not executable.startswith("qemu-system-"):
+                continue
+
+            args = {arg.decode(errors="ignore") for arg in cmdline[1:] if arg}
+            if candidates.intersection(args):
+                pids.append(int(proc_dir.name))
+
+        return pids
+
+    def _runtime_is_clean(self, port: Optional[int] = None) -> bool:
+        """Check whether all runtime artifacts for this VM have been removed"""
+        if self._screen_session_ids():
+            return False
+        if self._qemu_pids_for_image():
+            return False
+        if self.pid_file.exists():
+            return False
+        if port is None:
+            return True
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.2)
+                return sock.connect_ex(("127.0.0.1", port)) != 0
+        except OSError:
+            return True
+
+    def _terminate_runtime_once(self, force: bool = False) -> None:
+        """Best-effort cleanup pass for this VM runtime"""
         try:
             self.disconnect()
         except Exception:
             pass
 
-        killed = False
+        pids_to_kill = set()
         if self.pid_file.exists():
             try:
-                pid = int(self.pid_file.read_text().strip())
-                killed = utils.kill_process(pid)
+                pids_to_kill.add(int(self.pid_file.read_text().strip()))
             except (ValueError, OSError):
                 pass
 
-        # Always clean up screen session
-        screen_cleaned = False
-        try:
-            result = subprocess.run(
-                ["screen", "-S", self.screen_name, "-X", "quit"],
-                capture_output=True, timeout=5
-            )
-            screen_cleaned = result.returncode == 0
-        except Exception:
-            pass
+        if force:
+            pids_to_kill.update(self._qemu_pids_for_image())
 
-        # Clean stale pidfile
+        for pid in pids_to_kill:
+            utils.kill_process(pid)
+
+        for session_id in self._screen_session_ids():
+            try:
+                subprocess.run(
+                    ["screen", "-S", session_id, "-X", "quit"],
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception:
+                pass
+
         try:
             if self.pid_file.exists():
                 self.pid_file.unlink()
         except Exception:
             pass
 
-        return killed or screen_cleaned or not was_running
+    def stop(self, wait: bool = False, timeout: int = 20, force: bool = False) -> bool:
+        """Stop virtual machine and optionally wait for runtime cleanup"""
+        vm_conf = self.get_last_vm_config()
+        port = vm_conf.port if vm_conf else None
+
+        self._terminate_runtime_once(force=force)
+
+        if not wait:
+            return self._runtime_is_clean(port=port)
+
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            if self._runtime_is_clean(port=port):
+                return True
+            self._terminate_runtime_once(force=force)
+            time.sleep(0.5)
+
+        return self._runtime_is_clean(port=port)
+
+    def cleanup_runtime(self, timeout: int = 20) -> bool:
+        """Force cleanup all runtime artifacts and wait until they disappear"""
+        return self.stop(wait=True, timeout=timeout, force=True)
             
     def is_running(self) -> bool:
         """Check if VM is running"""
@@ -332,43 +421,186 @@ exec qemu-system-x86_64 \\
         if self._ssh:
             self._ssh.close()
             self._ssh = None
-            
-    def execute(self, command: str, silent: bool = False) -> Tuple[str, str]:
+
+    def _abort_ssh(self, channel=None) -> None:
+        """Best-effort hard stop for the current SSH connection"""
+        if channel is not None:
+            try:
+                channel.close()
+            except Exception:
+                pass
+
+        transport = None
+        if self._ssh:
+            try:
+                transport = self._ssh.get_transport()
+            except Exception:
+                transport = None
+        sock = getattr(transport, "sock", None) if transport else None
+
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+        if transport is not None:
+            try:
+                transport.close()
+            except Exception:
+                pass
+
+        self.disconnect()
+
+    def _is_ssh_io_error(self, exc: Exception) -> bool:
+        """Return True when the exception suggests the SSH connection is no longer healthy"""
+        return isinstance(exc, (socket.timeout, EOFError, ConnectionError, paramiko.SSHException, SCPException))
+
+    @contextmanager
+    def _timeout_guard(self, timeout: Optional[int], channel_getter=None):
+        """Abort the SSH connection when an operation exceeds the timeout"""
+        if timeout is None:
+            yield lambda: False
+            return
+
+        expired = threading.Event()
+        finished = threading.Event()
+        lock = threading.Lock()
+
+        def on_timeout():
+            with lock:
+                if finished.is_set():
+                    return
+                expired.set()
+                channel = channel_getter() if channel_getter is not None else None
+                self._abort_ssh(channel)
+
+        timer = threading.Timer(timeout, on_timeout)
+        timer.daemon = True
+        timer.start()
+        try:
+            yield expired.is_set
+        finally:
+            with lock:
+                finished.set()
+                timer.cancel()
+
+    def execute(self, command: str, silent: bool = False, timeout: Optional[int] = None) -> Tuple[str, str]:
         """Execute command in VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
-            
-        stdin, stdout, stderr = self._ssh.exec_command(command)
 
-        def safe_decode(data):
+        channel_holder = {"channel": None}
+        outputs = {"stdout": b"", "stderr": b""}
+        errors = {"stdout": None, "stderr": None}
+
+        def safe_decode(data: bytes) -> str:
             try:
-                return data.decode('utf-8')
+                return data.decode("utf-8")
             except UnicodeDecodeError:
                 try:
-                    return data.decode('utf-8', errors='backslashreplace')
+                    return data.decode("utf-8", errors="backslashreplace")
                 except UnicodeDecodeError:
-                    return data.decode('utf-8', errors='replace')
+                    return data.decode("utf-8", errors="replace")
 
-        if not silent:
-            return safe_decode(stdout.read()), safe_decode(stderr.read())
-        else:
-            return None, None
-        
-    def copy_to_vm(self, local_path: str, remote_path: str) -> None:
+        def read_stream(name: str, stream) -> None:
+            try:
+                outputs[name] = stream.read()
+            except Exception as exc:
+                errors[name] = exc
+
+        with self._timeout_guard(timeout, lambda: channel_holder["channel"]) as timed_out:
+            try:
+                _stdin, stdout, stderr = self._ssh.exec_command(command)
+                channel_holder["channel"] = stdout.channel
+
+                if silent:
+                    return None, None
+
+                readers = [
+                    threading.Thread(target=read_stream, args=("stdout", stdout)),
+                    threading.Thread(target=read_stream, args=("stderr", stderr)),
+                ]
+                for reader in readers:
+                    reader.daemon = True
+                    reader.start()
+                for reader in readers:
+                    reader.join()
+
+                if timed_out():
+                    raise TimeoutError(f"Command timed out after {timeout} seconds")
+
+                for name in ("stdout", "stderr"):
+                    if errors[name] is None:
+                        continue
+                    if timed_out():
+                        raise TimeoutError(f"Command timed out after {timeout} seconds") from errors[name]
+                    raise errors[name]
+
+                stdout.channel.recv_exit_status()
+                if timed_out():
+                    raise TimeoutError(f"Command timed out after {timeout} seconds")
+
+                return safe_decode(outputs["stdout"]), safe_decode(outputs["stderr"])
+            except TimeoutError:
+                self._abort_ssh(channel_holder["channel"])
+                raise
+            except Exception as exc:
+                if timed_out():
+                    raise TimeoutError(f"Command timed out after {timeout} seconds") from exc
+                if self._is_ssh_io_error(exc):
+                    self._abort_ssh(channel_holder["channel"])
+                raise
+
+    def copy_to_vm(self, local_path: str, remote_path: str, timeout: Optional[int] = None) -> None:
         """Copy file to VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
-            
-        with SCPClient(self._ssh.get_transport()) as scp:
-            scp.put(local_path, remote_path, recursive=True)
-            
-    def copy_from_vm(self, remote_path: str, local_path: str) -> None:
+
+        transport = self._ssh.get_transport()
+        if transport is None:
+            raise RuntimeError("SSH transport is not available")
+
+        with self._timeout_guard(timeout) as timed_out:
+            try:
+                with SCPClient(transport) as scp:
+                    scp.put(local_path, remote_path, recursive=True)
+                if timed_out():
+                    raise TimeoutError(f"SCP put timed out after {timeout} seconds")
+            except TimeoutError:
+                self._abort_ssh()
+                raise
+            except Exception as exc:
+                if timed_out():
+                    raise TimeoutError(f"SCP put timed out after {timeout} seconds") from exc
+                if self._is_ssh_io_error(exc):
+                    self._abort_ssh()
+                raise
+
+    def copy_from_vm(self, remote_path: str, local_path: str, timeout: Optional[int] = None) -> None:
         """Copy file from VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
-            
-        with SCPClient(self._ssh.get_transport()) as scp:
-            scp.get(remote_path, local_path, recursive=True)
+
+        transport = self._ssh.get_transport()
+        if transport is None:
+            raise RuntimeError("SSH transport is not available")
+
+        with self._timeout_guard(timeout) as timed_out:
+            try:
+                with SCPClient(transport) as scp:
+                    scp.get(remote_path, local_path, recursive=True)
+                if timed_out():
+                    raise TimeoutError(f"SCP get timed out after {timeout} seconds")
+            except TimeoutError:
+                self._abort_ssh()
+                raise
+            except Exception as exc:
+                if timed_out():
+                    raise TimeoutError(f"SCP get timed out after {timeout} seconds") from exc
+                if self._is_ssh_io_error(exc):
+                    self._abort_ssh()
+                raise
             
     def __enter__(self):
         self.connect()
