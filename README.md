@@ -6,7 +6,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/pypi/v/syzqemuctl?label=version" alt="PyPI - Version">
-<img src="https://img.shields.io/pypi/dm/syzqemuctl" alt="PyPI - Downloads">
+<img src="https://static.pepy.tech/badge/syzqemuctl" alt="PyPI - Downloads">
 <img src="https://img.shields.io/github/license/QGrain/syzqemuctl" alt="GitHub License">
 <img src="https://img.shields.io/codacy/grade/683d9c6a11d2492fbaf59ff069b275f2" alt="Codacy grade">
 </p>

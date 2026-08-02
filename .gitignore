@@ -4,3 +4,6 @@
 *.egg-info/
 build/
 dist/
+tests/
+CLAUDE.md
+AGENTS.md
