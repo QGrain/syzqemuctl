@@ -1,6 +1,5 @@
-import os
 import re
-import signal
+import shlex
 import subprocess
 import logging
 import socket
@@ -18,11 +17,10 @@ def set_paramiko_logging(level: int = logging.CRITICAL) -> None:
 set_paramiko_logging(logging.CRITICAL)
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from scp import SCPClient, SCPException
 import time
 
-from . import __title__
 from . import utils
 
 @dataclass
@@ -30,12 +28,17 @@ class VMConfig:
     """Virtual machine configuration"""
     DEFAULT_MEM = "4G"
     DEFAULT_SMP = 2
+    DEFAULT_KERNEL_ARGS = (
+        "net.ifnames=0 console=ttyS0 root=/dev/sda debug "
+        "earlyprintk=serial slub_debug=QUZ"
+    )
     
     kernel: str
     port: int
     memory: str = DEFAULT_MEM
     smp: int = DEFAULT_SMP
     snapshot: bool = False
+    kernel_args: str = DEFAULT_KERNEL_ARGS
     
     @classmethod
     def from_boot_script(cls, script_path: Path) -> Optional["VMConfig"]:
@@ -45,35 +48,72 @@ class VMConfig:
             
         try:
             content = script_path.read_text()
-            # Extract config from qemu command line args
-            kernel_match = re.search(r'-kernel ([^\s]+)/arch/x86', content)
-            port_match = re.search(r'hostfwd=tcp::(\d+)-:22', content)
-            mem_match = re.search(r'-m ([^\s]+)', content)
-            smp_match = re.search(r'-smp ([^\s]+)', content)
-            
-            if not all([kernel_match, port_match]):
-                return None
-                
-            return cls(
-                kernel=kernel_match.group(1),
-                port=int(port_match.group(1)),
-                memory=mem_match.group(1) if mem_match else cls.DEFAULT_MEM,
-                smp=int(smp_match.group(1)) if smp_match else cls.DEFAULT_SMP
+            command_match = re.search(
+                r"(?m)^exec\s+qemu-system-[^\s]+(?P<args>.*)",
+                content.replace("\\\n", " "),
+                re.DOTALL,
             )
-        except Exception:
+            if command_match is None:
+                return None
+
+            args = shlex.split(command_match.group("args"))
+
+            def argument_value(name: str) -> Optional[str]:
+                try:
+                    return args[args.index(name) + 1]
+                except (ValueError, IndexError):
+                    return None
+
+            kernel_image = argument_value("-kernel")
+            kernel_suffix = "/arch/x86/boot/bzImage"
+            network_args = [
+                args[index + 1]
+                for index, value in enumerate(args[:-1])
+                if value == "-net"
+            ]
+            port_match = None
+            for value in network_args:
+                match = re.search(r"hostfwd=tcp::(\d+)-:22", value)
+                if match is not None:
+                    port_match = match
+                    break
+            if (
+                kernel_image is None
+                or not kernel_image.endswith(kernel_suffix)
+                or port_match is None
+            ):
+                return None
+
+            memory = argument_value("-m") or cls.DEFAULT_MEM
+            smp = argument_value("-smp") or str(cls.DEFAULT_SMP)
+            parsed_kernel_args = argument_value("-append")
+            return cls(
+                kernel=kernel_image[:-len(kernel_suffix)],
+                port=int(port_match.group(1)),
+                memory=memory,
+                smp=int(smp),
+                snapshot="-snapshot" in args,
+                kernel_args=(
+                    parsed_kernel_args
+                    if parsed_kernel_args is not None
+                    else cls.DEFAULT_KERNEL_ARGS
+                ),
+            )
+        except (OSError, ValueError):
             return None
 
 class VM:
     """Virtual machine manager for running, stopping, and SSH operations"""
     PORT_START = 20000
     PORT_END = 30000
+    PROC_ROOT = Path("/proc")
     
     def __init__(self, image_path: str, verbose: bool = False):
-        self.image_path = Path(image_path)
+        self.image_path = Path(image_path).expanduser().resolve()
         self.pid_file = self.image_path / "vm.pid"
         self.log_file = self.image_path / "vm.log"
         self.boot_script = self.image_path / "boot.sh"
-        self.screen_name = f"{__title__}-{self.image_path.name}"
+        self.screen_name = utils.make_screen_name(self.image_path)
         self.verbose = verbose
 
         # SSH related attributes
@@ -83,41 +123,23 @@ class VM:
         
     def _find_available_port(self) -> Optional[int]:
         """Find an available port"""
-        try:
-            # Get all used ports using netstat
-            result = subprocess.run(
-                ["netstat", "-tuln"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            # Parse used ports
-            used_ports = set()
-            for line in result.stdout.splitlines():
-                if "LISTEN" in line:
-                    if match := re.search(r':(\d+)\s', line):
-                        used_ports.add(int(match.group(1)))
-                        
-            # Get ports used by other running VMs
-            for path in self.image_path.parent.iterdir():
-                if path.is_dir():
-                    vm = VM(str(path))
-                    if vm_conf := vm.get_last_vm_config():
-                        if vm.is_running():
-                            used_ports.add(vm_conf.port)
-                            
-            # First try last used port
-            if last_vm_conf := self.get_last_vm_config():
-                if last_vm_conf.port not in used_ports:
-                    return last_vm_conf.port
-                    
-            # Find new available port
-            for port in range(self.PORT_START, self.PORT_END):
-                if port not in used_ports:
+        candidates = []
+        last_vm_conf = self.get_last_vm_config()
+        if last_vm_conf is not None:
+            candidates.append(last_vm_conf.port)
+        candidates.extend(
+            port
+            for port in range(self.PORT_START, self.PORT_END)
+            if port not in candidates
+        )
+
+        for port in candidates:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.bind(("0.0.0.0", port))
                     return port
-                    
-        except subprocess.SubprocessError:
-            pass
+            except OSError:
+                continue
         return None
         
     def get_last_vm_config(self) -> Optional[VMConfig]:
@@ -126,58 +148,114 @@ class VM:
         
     def _generate_boot_script(self, vm_conf: VMConfig) -> None:
         """Generate boot script"""
-        snapshot_arg = " -snapshot \\\n" if vm_conf.snapshot else ""
-        kernel_args = "net.ifnames=0 console=ttyS0 root=/dev/sda debug earlyprintk=serial slub_debug=QUZ"
-        script_content = f"""#!/bin/bash
-exec > >(tee {self.log_file}) 2>&1
-exec qemu-system-x86_64 \\
- -kernel {vm_conf.kernel}/arch/x86/boot/bzImage \\
- -append "{kernel_args}" \\
- -hda {self.image_path}/bullseye.img \\
-{snapshot_arg} -net user,hostfwd=tcp::{vm_conf.port}-:22 -net nic \\
- -enable-kvm \\
- -cpu host,migratable=off \\
- -nographic \\
- -m {vm_conf.memory} \\
- -smp {vm_conf.smp} \\
- -pidfile {self.pid_file}
-"""
+        qemu_options = [
+            ["-kernel", str(Path(vm_conf.kernel) / "arch/x86/boot/bzImage")],
+            ["-append", vm_conf.kernel_args],
+            ["-hda", str(self.image_path / "bullseye.img")],
+            ["-net", f"user,hostfwd=tcp::{vm_conf.port}-:22"],
+            ["-net", "nic"],
+            ["-enable-kvm"],
+            ["-cpu", "host,migratable=off"],
+            ["-nographic"],
+            ["-m", vm_conf.memory],
+            ["-smp", str(vm_conf.smp)],
+            ["-pidfile", str(self.pid_file)],
+        ]
+        if vm_conf.snapshot:
+            qemu_options.append(["-snapshot"])
+
+        command_parts = ["qemu-system-x86_64"]
+        command_parts.extend(
+            " ".join(shlex.quote(argument) for argument in option)
+            for option in qemu_options
+        )
+        qemu_command = " \\\n  ".join(command_parts)
+        script_content = (
+            "#!/bin/bash\n"
+            f"exec > >(tee -- {shlex.quote(str(self.log_file))}) 2>&1\n"
+            f"exec {qemu_command}\n"
+        )
         self.boot_script.write_text(script_content)
         self.boot_script.chmod(0o755)
         
-    def start(self, kernel: str = None, port: int = None, mem: str = None, smp: int = None, snapshot: bool = False) -> bool:
+    @utils.locked_image_operation
+    def start(
+        self,
+        kernel: Optional[str] = None,
+        port: Optional[int] = None,
+        mem: Optional[str] = None,
+        smp: Optional[int] = None,
+        snapshot: bool = False,
+        kernel_args: Optional[str] = None,
+        extra_kernel_args: Optional[str] = None,
+    ) -> bool:
         """Start virtual machine"""
+        if not self.image_path.is_dir():
+            print(f"Image directory not found: {self.image_path}")
+            return False
         if self.is_running():
             print("VM is already running")
             return False
 
         # Load last boot vm config
         last_vm_conf = self.get_last_vm_config()
-        if last_vm_conf:
-            kernel = kernel or last_vm_conf.kernel
-            port = port or last_vm_conf.port
-            mem = mem or last_vm_conf.memory
-            smp = smp or last_vm_conf.smp
-        else:
-            port = port or self._find_available_port()
-            mem = mem or VMConfig.DEFAULT_MEM
-            smp = smp or VMConfig.DEFAULT_SMP
-        assert kernel, "Kernel path is required for the first boot"
-        # Generate boot script and run in screen
-        self._generate_boot_script(VMConfig(kernel, port, mem, smp, snapshot))
-        utils.log_info(f"Write boot script to {self.boot_script} with kernel={kernel}, port={port}, mem={mem}, smp={smp}, snapshot={snapshot}", self.verbose)
-        
-        try:
-            # Clean up old screen session
-            subprocess.run(
-                ["screen", "-S", self.screen_name, "-X", "quit"],
-                capture_output=True, text=True, check=True
-            )
-            utils.log_info(f"Cleaned up old screen session: {self.screen_name}", self.verbose)
-        except Exception:
-            pass
+        if last_vm_conf is not None:
+            kernel = kernel if kernel is not None else last_vm_conf.kernel
+            mem = mem if mem is not None else last_vm_conf.memory
+            smp = smp if smp is not None else last_vm_conf.smp
 
+        if kernel is None:
+            print("Kernel path is required for the first boot")
+            return False
+        mem = mem if mem is not None else VMConfig.DEFAULT_MEM
+        smp = smp if smp is not None else VMConfig.DEFAULT_SMP
+        if smp <= 0:
+            print("CPU cores must be greater than zero")
+            return False
+
+        if not self._stop_runtime(
+            wait=True,
+            timeout=20,
+            force=False,
+            check_port=False,
+        ):
+            print("Failed to clean up the previous VM runtime")
+            return False
+
+        port = port if port is not None else self._find_available_port()
+        if port is None or not 1 <= port <= 65535:
+            print("No available SSH port found")
+            return False
+
+        if kernel_args is not None:
+            resolved_kernel_args = kernel_args
+        elif last_vm_conf is not None:
+            resolved_kernel_args = last_vm_conf.kernel_args
+        else:
+            resolved_kernel_args = VMConfig.DEFAULT_KERNEL_ARGS
+        if extra_kernel_args:
+            resolved_kernel_args = (
+                f"{resolved_kernel_args} {extra_kernel_args}".strip()
+            )
+
+        # Generate boot script and run in screen
+        vm_conf = VMConfig(
+            kernel=kernel,
+            port=port,
+            memory=mem,
+            smp=smp,
+            snapshot=snapshot,
+            kernel_args=resolved_kernel_args,
+        )
         try:
+            self._generate_boot_script(vm_conf)
+            utils.log_info(
+                f"Write boot script to {self.boot_script} with kernel={kernel}, "
+                f"port={port}, mem={mem}, smp={smp}, snapshot={snapshot}, "
+                f"kernel_args={resolved_kernel_args}",
+                self.verbose,
+            )
+
             # Start new screen session
             subprocess.run(
                 ["screen", "-dmS", self.screen_name, str(self.boot_script)],
@@ -185,8 +263,8 @@ exec qemu-system-x86_64 \\
             )
 
             # Wait for PID file and process readiness (max 30 seconds)
-            deadline = time.time() + 30
-            while time.time() < deadline:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
                 if self.pid_file.exists() and self.is_running():
                     break
                 time.sleep(0.1)
@@ -194,55 +272,66 @@ exec qemu-system-x86_64 \\
                 raise RuntimeError("Failed to start VM: PID file not generated")
 
             utils.log_info(f"Tip: Use 'screen -r {self.screen_name}' to view VM console", self.verbose)
-            utils.log_info(f"     Use Ctrl+A,D to detach from console", self.verbose)
+            utils.log_info("     Use Ctrl+A,D to detach from console", self.verbose)
             return True
         except Exception as e:
             print(f"Failed to start VM: {e}")
-            # Best-effort cleanup on failure
-            try:
-                subprocess.run(
-                    ["screen", "-S", self.screen_name, "-X", "quit"],
-                    capture_output=True, timeout=5
-                )
-            except Exception:
-                pass
-            try:
-                if self.pid_file.exists():
-                    self.pid_file.unlink()
-            except Exception:
-                pass
+            self._stop_runtime(
+                wait=True,
+                timeout=20,
+                force=True,
+                check_port=False,
+            )
             return False
             
-    def _screen_session_ids(self) -> list[str]:
+    def _screen_session_ids(
+        self,
+        timeout: float = 5.0,
+    ) -> Optional[List[str]]:
         """Return screen session ids that belong to this VM"""
+        if timeout <= 0:
+            return None
         try:
             result = subprocess.run(
                 ["screen", "-ls"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=timeout,
             )
         except Exception:
-            return []
+            return None
 
         sessions = []
         for line in result.stdout.splitlines():
-            if self.screen_name not in line:
-                continue
             token = line.strip().split()
-            if token:
-                sessions.append(token[0])
+            if not token:
+                continue
+            session_id = token[0]
+            session_name = session_id.split(".", 1)[1] if "." in session_id else session_id
+            if session_name == self.screen_name:
+                sessions.append(session_id)
         return sessions
 
-    def _qemu_pids_for_image(self) -> list[int]:
+    def _qemu_pids_for_image(
+        self, candidate_pids: Optional[List[int]] = None
+    ) -> List[int]:
         """Return qemu-system pids whose cmdline points at this VM image"""
-        image_file = self.image_path / "bullseye.img"
-        candidates = {str(image_file), str(image_file.resolve())}
+        image_file = (self.image_path / "bullseye.img").resolve()
         pids = []
 
-        for proc_dir in Path("/proc").iterdir():
-            if not proc_dir.name.isdigit():
-                continue
+        if candidate_pids is None:
+            proc_dirs = [
+                path
+                for path in self.PROC_ROOT.iterdir()
+                if path.name.isdigit()
+            ]
+        else:
+            proc_dirs = [
+                self.PROC_ROOT / str(pid)
+                for pid in candidate_pids
+            ]
+
+        for proc_dir in proc_dirs:
             try:
                 cmdline = (proc_dir / "cmdline").read_bytes().split(b"\0")
             except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
@@ -254,31 +343,99 @@ exec qemu-system-x86_64 \\
             if not executable.startswith("qemu-system-"):
                 continue
 
-            args = {arg.decode(errors="ignore") for arg in cmdline[1:] if arg}
-            if candidates.intersection(args):
+            args = [arg.decode(errors="ignore") for arg in cmdline[1:] if arg]
+            cwd_link = proc_dir / "cwd"
+            try:
+                cwd = cwd_link.resolve() if cwd_link.exists() else None
+            except (OSError, RuntimeError):
+                cwd = None
+
+            def references_image(path: str) -> bool:
+                candidate = Path(path)
+                if not candidate.is_absolute():
+                    if cwd is None:
+                        return False
+                    candidate = cwd / candidate
+                try:
+                    return candidate.resolve() == image_file
+                except (OSError, RuntimeError):
+                    return False
+
+            image_arguments = []
+            for index, argument in enumerate(args[:-1]):
+                value = args[index + 1]
+                if argument in ("-hda", "-hdb", "-hdc", "-hdd"):
+                    image_arguments.append(value)
+                elif argument in ("-drive", "-blockdev"):
+                    for part in value.split(","):
+                        if part.startswith("file="):
+                            image_arguments.append(part[5:])
+                        elif part.startswith("filename="):
+                            image_arguments.append(part[9:])
+
+            matches_image = any(references_image(path) for path in image_arguments)
+            if matches_image:
                 pids.append(int(proc_dir.name))
 
         return pids
 
-    def _runtime_is_clean(self, port: Optional[int] = None) -> bool:
+    def _pidfile_qemu_pid(self) -> Optional[int]:
+        """Return the pidfile PID only when it belongs to this VM's QEMU"""
+        if not self.pid_file.exists():
+            return None
+        try:
+            pid = int(self.pid_file.read_text().strip())
+        except (ValueError, OSError):
+            return None
+        return pid if self._qemu_pids_for_image([pid]) else None
+
+    def _runtime_is_clean(
+        self,
+        port: Optional[int] = None,
+        deadline: Optional[float] = None,
+    ) -> bool:
         """Check whether all runtime artifacts for this VM have been removed"""
-        if self._screen_session_ids():
+        screen_timeout = 5.0
+        if deadline is not None:
+            screen_timeout = max(deadline - time.monotonic(), 0)
+            if screen_timeout <= 0:
+                return False
+        screen_sessions = self._screen_session_ids(
+            timeout=min(screen_timeout, 5.0)
+        )
+        if screen_sessions is None or screen_sessions:
+            return False
+        if deadline is not None and time.monotonic() >= deadline:
             return False
         if self._qemu_pids_for_image():
+            return False
+        if deadline is not None and time.monotonic() >= deadline:
             return False
         if self.pid_file.exists():
             return False
         if port is None:
             return True
 
+        socket_timeout = 0.2
+        if deadline is not None:
+            socket_timeout = min(
+                socket_timeout,
+                max(deadline - time.monotonic(), 0),
+            )
+            if socket_timeout <= 0:
+                return False
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(0.2)
+                sock.settimeout(socket_timeout)
                 return sock.connect_ex(("127.0.0.1", port)) != 0
         except OSError:
             return True
 
-    def _terminate_runtime_once(self, force: bool = False) -> None:
+    def _terminate_runtime_once(
+        self,
+        force: bool = False,
+        deadline: Optional[float] = None,
+    ) -> None:
         """Best-effort cleanup pass for this VM runtime"""
         try:
             self.disconnect()
@@ -286,52 +443,87 @@ exec qemu-system-x86_64 \\
             pass
 
         pids_to_kill = set()
-        if self.pid_file.exists():
-            try:
-                pids_to_kill.add(int(self.pid_file.read_text().strip()))
-            except (ValueError, OSError):
-                pass
+        pidfile_pid = self._pidfile_qemu_pid()
+        if pidfile_pid is not None:
+            pids_to_kill.add(pidfile_pid)
 
         if force:
             pids_to_kill.update(self._qemu_pids_for_image())
 
+        kill_results = {}
         for pid in pids_to_kill:
-            utils.kill_process(pid)
+            if deadline is None:
+                kill_results[pid] = utils.kill_process(pid)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            kill_results[pid] = utils.kill_process(pid, timeout=remaining)
 
-        for session_id in self._screen_session_ids():
+        screen_timeout = 5.0
+        if deadline is not None:
+            screen_timeout = min(screen_timeout, max(deadline - time.monotonic(), 0))
+        session_ids = (
+            self._screen_session_ids(timeout=screen_timeout)
+            if screen_timeout > 0
+            else None
+        )
+        for session_id in session_ids or []:
             try:
+                command_timeout = 5.0
+                if deadline is not None:
+                    command_timeout = min(
+                        command_timeout,
+                        max(deadline - time.monotonic(), 0),
+                    )
+                    if command_timeout <= 0:
+                        break
                 subprocess.run(
                     ["screen", "-S", session_id, "-X", "quit"],
                     capture_output=True,
-                    timeout=5,
+                    timeout=command_timeout,
                 )
             except Exception:
                 pass
 
         try:
-            if self.pid_file.exists():
+            pidfile_can_be_removed = (
+                pidfile_pid is None or kill_results.get(pidfile_pid, False)
+            )
+            if pidfile_can_be_removed and self.pid_file.exists():
                 self.pid_file.unlink()
         except Exception:
             pass
 
-    def stop(self, wait: bool = False, timeout: int = 20, force: bool = False) -> bool:
-        """Stop virtual machine and optionally wait for runtime cleanup"""
-        vm_conf = self.get_last_vm_config()
-        port = vm_conf.port if vm_conf else None
-
-        self._terminate_runtime_once(force=force)
+    def _stop_runtime(
+        self,
+        wait: bool,
+        timeout: int,
+        force: bool,
+        check_port: bool = True,
+    ) -> bool:
+        vm_conf = self.get_last_vm_config() if check_port else None
+        port = vm_conf.port if vm_conf is not None else None
+        deadline = time.monotonic() + max(timeout, 0) if wait else None
+        self._terminate_runtime_once(force=force, deadline=deadline)
 
         if not wait:
             return self._runtime_is_clean(port=port)
 
-        start_time = time.monotonic()
-        while time.monotonic() - start_time < timeout:
-            if self._runtime_is_clean(port=port):
+        while time.monotonic() < deadline:
+            if self._runtime_is_clean(port=port, deadline=deadline):
                 return True
-            self._terminate_runtime_once(force=force)
-            time.sleep(0.5)
+            self._terminate_runtime_once(force=force, deadline=deadline)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(0.5, remaining))
 
-        return self._runtime_is_clean(port=port)
+        return False
+
+    @utils.locked_image_operation
+    def stop(self, wait: bool = False, timeout: int = 20, force: bool = False) -> bool:
+        """Stop virtual machine and optionally wait for runtime cleanup"""
+        return self._stop_runtime(wait, timeout, force)
 
     def cleanup_runtime(self, timeout: int = 20) -> bool:
         """Force cleanup all runtime artifacts and wait until they disappear"""
@@ -339,16 +531,14 @@ exec qemu-system-x86_64 \\
             
     def is_running(self) -> bool:
         """Check if VM is running"""
-        try:
-            return self.pid_file.exists() and os.kill(int(self.pid_file.read_text().strip()), 0) is None
-        except (ValueError, ProcessLookupError, OSError):
-            return False
+        return bool(self._qemu_pids_for_image())
             
     def is_ready(self) -> bool:
         """Check if VM is fully started (SSH available)"""
         if not self.is_running():
             return False
             
+        ssh = None
         try:
             vm_conf = self.get_last_vm_config()
             if not vm_conf:
@@ -366,10 +556,15 @@ exec qemu-system-x86_64 \\
                 banner_timeout=5,
                 auth_timeout=5,
             )
-            ssh.close()
             return True
         except Exception:
             return False
+        finally:
+            if ssh is not None:
+                try:
+                    ssh.close()
+                except Exception:
+                    pass
             
     def wait_until_ready(self, timeout: int = 120, interval: int = 3) -> bool:
         """Wait for VM to be fully started, return False on timeout"""
@@ -386,23 +581,20 @@ exec qemu-system-x86_64 \\
             print("VM is not running")
             return False
             
-        if not self.is_ready():
-            utils.log_info("VM is starting, please wait...", self.verbose)
-            return False
-            
         if not self._key_file.exists():
             print(f"SSH key not found: {self._key_file}")
             return False
             
+        ssh = None
         try:
             vm_conf = self.get_last_vm_config()
             if not vm_conf:
                 print("Failed to get VM config")
                 return False
                 
-            self._ssh = paramiko.SSHClient()
-            self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self._ssh.connect(
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(
                 hostname="localhost",
                 port=vm_conf.port,
                 username=username,
@@ -411,8 +603,20 @@ exec qemu-system-x86_64 \\
                 banner_timeout=10,
                 auth_timeout=10,
             )
+            old_ssh = self._ssh
+            self._ssh = ssh
+            if old_ssh is not None:
+                try:
+                    old_ssh.close()
+                except Exception:
+                    pass
             return True
         except Exception as e:
+            if ssh is not None:
+                try:
+                    ssh.close()
+                except Exception:
+                    pass
             print(f"Failed to connect to VM: {e}")
             return False
             
@@ -485,7 +689,13 @@ exec qemu-system-x86_64 \\
                 finished.set()
                 timer.cancel()
 
-    def execute(self, command: str, silent: bool = False, timeout: Optional[int] = None) -> Tuple[str, str]:
+    def execute(
+        self,
+        command: str,
+        silent: bool = False,
+        timeout: Optional[int] = None,
+        check: bool = False,
+    ) -> Tuple[str, str]:
         """Execute command in VM"""
         if not self._ssh:
             raise RuntimeError("Not connected to VM")
@@ -537,11 +747,20 @@ exec qemu-system-x86_64 \\
                         raise TimeoutError(f"Command timed out after {timeout} seconds") from errors[name]
                     raise errors[name]
 
-                stdout.channel.recv_exit_status()
+                returncode = stdout.channel.recv_exit_status()
                 if timed_out():
                     raise TimeoutError(f"Command timed out after {timeout} seconds")
 
-                return safe_decode(outputs["stdout"]), safe_decode(outputs["stderr"])
+                decoded_stdout = safe_decode(outputs["stdout"])
+                decoded_stderr = safe_decode(outputs["stderr"])
+                if check and returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        returncode,
+                        command,
+                        output=decoded_stdout,
+                        stderr=decoded_stderr,
+                    )
+                return decoded_stdout, decoded_stderr
             except TimeoutError:
                 self._abort_ssh(channel_holder["channel"])
                 raise
@@ -603,7 +822,8 @@ exec qemu-system-x86_64 \\
                 raise
             
     def __enter__(self):
-        self.connect()
+        if not self.connect():
+            raise ConnectionError("Failed to connect to VM")
         return self
         
     def __exit__(self, exc_type, exc_val, exc_tb):

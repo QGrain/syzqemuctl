@@ -107,6 +107,13 @@ Each version without `BUG` tag is usable.
     - Drain `stdout` and `stderr` concurrently in `VM.execute()` to avoid dual-stream blocking on large output
     - Abort the current SSH/SCP connection on timeout so callers can recover with a fresh `connect()`
     - Extend `VM.stop()` with `wait` and `force` options, and add `VM.cleanup_runtime()` for strong runtime cleanup
+- 0.3.5: 2026-08-16
+    - Add configurable guest kernel command lines through `kernel_args` and `extra_kernel_args` in both API and CLI modes
+    - Safely quote generated QEMU arguments and stop interpolating dynamic paths into image-creation shell commands
+    - Add path-specific screen names, per-image operation locking, exact QEMU/PID ownership checks, startup pre-cleanup, and deletion protection for running images
+    - Replace the `netstat` port scan with socket binding and remove the duplicate SSH handshake from `connect()`
+    - Expose timeout and strong-cleanup controls in the CLI, with non-zero exit status on operation failures
+    - Restore tracked unit tests and retain Python 3.8 compatibility
 </details open>
 
 <details>
@@ -130,7 +137,7 @@ python3.8+ qemu screen ssh
 
 ## Configuration
 
-The configuration file is stored in `~/.config/syzqemuctl/config.json`. It contains:
+The configuration file is stored in `~/.config/syzqemuctl/settings.json`. It contains:
 - Images home directory path
 - Default VM settings
 
@@ -165,6 +172,17 @@ syzqemuctl run my-image --kernel /path/to/kernel
 syzqemuctl run my-image --kernel /path/to/kernel --snapshot
 ```
 
+   Append case-specific arguments to the saved command line, or to the default
+   command line on first boot:
+```bash
+syzqemuctl run my-image --kernel /path/to/kernel \
+  --extra-kernel-args "systemd.unified_cgroup_hierarchy=0"
+```
+
+   Use `--kernel-args "..."` instead to replace the complete guest kernel
+   command line. Explicit kernel arguments are stored in `boot.sh` and reused
+   by later starts unless new arguments are supplied.
+
 4. Check image/VM status:
 ```bash
 syzqemuctl status my-image
@@ -172,8 +190,8 @@ syzqemuctl status my-image
 
 5. Copy files/dir to/from VM:
 ```bash
-syzqemuctl cp local_file my-image:/remote/path  # Copy to VM
-syzqemuctl cp my-image:/remote/file local_path  # Copy from VM
+syzqemuctl cp --timeout 600 local_file my-image:/remote/path  # Copy to VM
+syzqemuctl cp --timeout 600 my-image:/remote/file local_path  # Copy from VM
 
 syzqemuctl cp local_dir my-image:/remote/       # Copy local_dir to VM
 syzqemuctl cp local_dir/ my-image:/remote/      # Copy local_dir/* to VM
@@ -182,12 +200,13 @@ syzqemuctl cp local_dir/ my-image:/remote/      # Copy local_dir/* to VM
 
 6. Execute commands in VM:
 ```bash
-syzqemuctl exec my-image "uname -a" # You'd better wrap the command with double quotes
+syzqemuctl exec --timeout 30 my-image "uname -a" # You'd better wrap the command with double quotes
 ```
 
 7. Stop the VM:
 ```bash
 syzqemuctl stop my-image
+syzqemuctl stop my-image --wait --force --timeout 20
 ```
 
 8. Restart the VM:
@@ -205,6 +224,8 @@ syzqemuctl list
 syzqemuctl delete my-image
 ```
 
+   A running image must be stopped before it can be deleted.
+
 ### ⭐ As a Python package (API)
 
 ```python
@@ -220,7 +241,13 @@ manager.create("my-image")
 # Or just direct specify a created image and run a VM from it
 # Use verbose=True if you want to see boot script and screen session tips
 vm = VM("/path/to/images_home/my-image")
-vm.start(kernel="/path/to/kernel")
+vm.start(
+    kernel="/path/to/kernel",
+    extra_kernel_args="systemd.unified_cgroup_hierarchy=0",
+)
+
+# Use kernel_args="..." to replace the complete guest kernel command line.
+# start() cleans stale runtime belonging to this image before launching QEMU.
 
 # Wait several minutes for the VM to be ready, or you can check by:
 if vm.is_ready():

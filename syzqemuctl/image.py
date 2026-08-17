@@ -1,6 +1,4 @@
-import os
 import shutil
-import requests
 import subprocess
 from pathlib import Path
 from typing import List, Optional
@@ -25,30 +23,56 @@ class ImageManager:
     SYZKALLER_SCRIPT_URL = "https://github.com/google/syzkaller/raw/32d786e786e2caf2ba9704bf55562e65b1a4e70c/tools/create-image.sh"
     
     def __init__(self, images_home: str, verbose: bool = False):
-        self.images_home = Path(images_home)
+        self.images_home = Path(images_home).expanduser().resolve()
         self.template_default_dir = self.images_home / "image-template"
         self.verbose = verbose
 
-    def _download_create_script(self) -> None:
+    def _image_path(self, name: str) -> Optional[Path]:
+        """Resolve a single image name without allowing path traversal"""
+        if not name or Path(name).name != name:
+            return None
+        candidate = self.images_home / name
+        if candidate.is_symlink():
+            return None
+        path = candidate.resolve()
+        return path if path.parent == self.images_home else None
+
+    def _download_create_script(self) -> bool:
         """Download create-image.sh script"""
         script_path = self.images_home / "create-image.sh"
-        if not script_path.exists():
-            if utils.download_file(self.SYZKALLER_SCRIPT_URL, str(script_path), executable=True):
-                utils.log_info(f"Downloaded create-image.sh to {script_path}", self.verbose)
+        if script_path.exists():
+            return True
+        if utils.download_file(
+            self.SYZKALLER_SCRIPT_URL,
+            str(script_path),
+            executable=True,
+        ):
+            utils.log_info(f"Downloaded create-image.sh to {script_path}", self.verbose)
+            return True
+        return False
 
-    def initialize(self, force: bool = False, blocking: bool = False, size: int = 3072) -> None:
+    def initialize(self, force: bool = False, blocking: bool = False, size: int = 3072) -> bool:
         """Initialize image directory
         Args:
             force: Force reinitialize even if template exists
             blocking: Wait for template creation to complete
             size: Template disk size in MB (default: 3072)
         """
+        if size <= 0:
+            print(f"Invalid image size: {size}MB")
+            return False
+
         self.images_home.mkdir(parents=True, exist_ok=True)
-        self._download_create_script()
+        if not self._download_create_script():
+            return False
+
+        if self.template_default_dir.is_symlink():
+            print("Template image directory must not be a symbolic link")
+            return False
 
         if self.is_image_ready("image-template") and not force:
             utils.log_info("Template image already exists, initialization complete", self.verbose)
-            return
+            return True
 
         # Create template directory
         self.template_default_dir.mkdir(exist_ok=True)
@@ -59,22 +83,34 @@ class ImageManager:
 
         # Run create-image.sh (-s size for specified image size)
         utils.log_info("Starting template image creation, this may take a while...", self.verbose)
-        cmd = f"cd {self.template_default_dir} && ./create-image.sh -s {size} && touch .image_ready"
-
         if blocking:
             utils.log_info(f"Creating template image: {self.template_default_dir} in blocking mode", self.verbose)
             try:
-                subprocess.run(["bash", "-c", cmd], check=True)
+                subprocess.run(
+                    ["./create-image.sh", "-s", str(size)],
+                    cwd=str(self.template_default_dir),
+                    check=True,
+                )
+                self._touch_ready(self.template_default_dir)
+                return True
             except subprocess.CalledProcessError as e:
                 print(f"Failed to create template image: {e}")
-                return
+                return False
         else:
             utils.log_info(f"Creating template image: {self.template_default_dir} in non-blocking mode", self.verbose)
-            subprocess.Popen(
-                ["screen", "-dmS", f"{__title__}-template-creation",
-                    "bash", "-c", cmd],
-                start_new_session=True
-            )
+            try:
+                subprocess.Popen(
+                    ["screen", "-dmS", utils.make_screen_name(
+                        self.template_default_dir, "creation"
+                    ), "bash", "-c",
+                        'cd "$1" && ./create-image.sh -s "$2" && touch .image_ready',
+                        __title__, str(self.template_default_dir), str(size)],
+                    start_new_session=True
+                )
+                return True
+            except OSError as e:
+                print(f"Failed to start template image creation: {e}")
+                return False
 
     def _copy_core_image_files(self, source: Path, dest: Path) -> bool:
         """Copy core files needed to boot and manage a VM"""
@@ -103,11 +139,18 @@ class ImageManager:
 
     def is_image_ready(self, name: str) -> bool:
         """Check if image is ready"""
-        path = self.images_home / name
+        path = self._image_path(name)
+        if path is None:
+            return False
         return (path / ".image_ready").exists() or (path / ".template_ready").exists()
 
     def create(self, name: str, size: Optional[int] = None, force: bool = False) -> bool:
         """Create new image"""
+        target_dir = self._image_path(name)
+        if target_dir is None:
+            print(f"Invalid image name: {name}")
+            return False
+
         template_ready = self.is_image_ready("image-template")
         if size is not None:
             template_ready = template_ready or self.is_image_ready(f"image-template-{size}")
@@ -119,7 +162,6 @@ class ImageManager:
             print(f"Image name '{name}' is reserved, names starting with 'image-template' are not allowed")
             return False
 
-        target_dir = self.images_home / name
         if target_dir.exists():
             print(f"Image {name} already exists")
             return False
@@ -143,7 +185,10 @@ class ImageManager:
             print(f"Image size too large: {size}MB, max 20*1024MB")
             return False
         else:
-            template_size_dir = self.images_home / f"image-template-{size}"
+            template_size_dir = self._image_path(f"image-template-{size}")
+            if template_size_dir is None:
+                print("Template cache directory must not be a symbolic link")
+                return False
 
             if force:
                 # Bypass cache, create from scratch
@@ -155,8 +200,12 @@ class ImageManager:
                 utils.log_info(f"Creating image: {name} with size {size}MB from scratch (cache bypassed)", self.verbose)
                 try:
                     subprocess.Popen(
-                        ["screen", "-dmS", f"{__title__}-{name}-creation",
-                            "bash", "-c", f"cd {target_dir} && ./create-image.sh -s {size} && touch .image_ready"],
+                        ["screen", "-dmS", utils.make_screen_name(
+                            target_dir, "creation"
+                        ),
+                            "bash", "-c",
+                            'cd "$1" && ./create-image.sh -s "$2" && touch .image_ready',
+                            __title__, str(target_dir), str(size)],
                         start_new_session=True
                     )
                 except Exception as e:
@@ -195,16 +244,19 @@ class ImageManager:
                     return False
 
                 utils.log_info(f"Creating image: {name} with size {size}MB from scratch", self.verbose)
-                cmd = (
-                    f"cd {target_dir} && ./create-image.sh -s {size} && "
-                    f"touch .image_ready && "
-                    f"cp create-image.sh bullseye.img bullseye.id_rsa bullseye.id_rsa.pub {template_size_dir}/ && "
-                    f"touch {template_size_dir}/.image_ready"
-                )
                 try:
                     subprocess.Popen(
-                        ["screen", "-dmS", f"{__title__}-{name}-creation",
-                            "bash", "-c", cmd],
+                        ["screen", "-dmS", utils.make_screen_name(
+                            target_dir, "creation"
+                        ),
+                            "bash", "-c",
+                            'cd "$1" && ./create-image.sh -s "$2" && '
+                            'touch .image_ready && '
+                            'cp create-image.sh bullseye.img bullseye.id_rsa '
+                            'bullseye.id_rsa.pub "$3"/ && '
+                            'touch "$3"/.image_ready',
+                            __title__, str(target_dir), str(size),
+                            str(template_size_dir)],
                         start_new_session=True
                     )
                 except Exception as e:
@@ -215,36 +267,69 @@ class ImageManager:
             
     def delete(self, name: str) -> bool:
         """Delete image"""
-        target_dir = self.images_home / name
+        target_dir = self._image_path(name)
+        if target_dir is None:
+            print(f"Invalid image name: {name}")
+            return False
         if not target_dir.exists():
             print(f"Image {name} does not exist")
             return False
-            
-        try:
-            shutil.rmtree(target_dir)
-            utils.log_info(f"Successfully deleted image: {name}", self.verbose)
-            return True
-        except Exception as e:
-            print(f"Failed to delete image: {e}")
-            return False
+
+        from .vm import VM
+        with utils.image_operation_lock(target_dir):
+            vm = VM(str(target_dir))
+            runtime_screens = vm._screen_session_ids()
+            if runtime_screens is None:
+                print(f"Unable to verify runtime state for image {name}")
+                return False
+            if vm.is_running() or runtime_screens:
+                print(f"Image {name} is running; stop it before deleting")
+                return False
+
+            creation_screen = utils.make_screen_name(target_dir, "creation")
+            legacy_creation_screen = (
+                f"{__title__}-template-creation"
+                if name == "image-template"
+                else f"{__title__}-{name}-creation"
+            )
+            creation_states = [utils.check_screen_exists(creation_screen)]
+            if legacy_creation_screen != creation_screen:
+                creation_states.append(
+                    utils.check_screen_exists(legacy_creation_screen)
+                )
+            if any(state is None for state in creation_states):
+                print(f"Unable to verify creation state for image {name}")
+                return False
+            if any(creation_states):
+                print(f"Image {name} is still being created")
+                return False
+
+            try:
+                shutil.rmtree(target_dir)
+                utils.log_info(f"Successfully deleted image: {name}", self.verbose)
+                return True
+            except Exception as e:
+                print(f"Failed to delete image: {e}")
+                return False
             
     def get_image_info(self, name: str) -> Optional[ImageInfo]:
         """Get image information"""
-        path = self.images_home / name
-        if not path.exists():
+        path = self._image_path(name)
+        if path is None or not path.exists():
             return None
 
         # Check running status
+        from .vm import VM
+
+        vm = VM(str(path))
         pid_file = path / "vm.pid"
-        pid = None
-        running = False
         try:
-            pid_text = pid_file.read_text().strip()
-            pid = int(pid_text)
-            os.kill(pid, 0)
-            running = True
-        except (ValueError, ProcessLookupError, OSError):
-            running = False
+            pid = int(pid_file.read_text().strip())
+        except (ValueError, OSError):
+            pid = None
+        running = vm.is_running()
+        if pid is not None and not vm._qemu_pids_for_image([pid]):
+            pid = None
 
         # Check if it's template and its status
         is_template = name == "image-template" or name.startswith("image-template-")

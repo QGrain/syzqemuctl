@@ -35,6 +35,7 @@ class GlobalConfig:
             
     def load(self) -> bool:
         """Load configuration file"""
+        self._settings = {}
         try:
             if not self.config_file.exists():
                 return False
@@ -56,4 +57,4 @@ class GlobalConfig:
         return self.config_file.exists()
 
 # Global configuration instance
-global_conf = GlobalConfig() 
+global_conf = GlobalConfig()

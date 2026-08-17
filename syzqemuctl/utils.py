@@ -1,14 +1,59 @@
+import fcntl
+import hashlib
 import requests
+import re
 from packaging import version
-from typing import Optional, Tuple
-from functools import lru_cache
+from typing import Iterator, Optional, Tuple
+from contextlib import contextmanager
+from functools import lru_cache, wraps
+from pathlib import Path
 import os
 import signal
 import time
 import subprocess
 
-from ._version import __version__, __title__
+from ._version import __title__
 from .config import global_conf
+
+
+def make_screen_name(image_path: Path, suffix: Optional[str] = None) -> str:
+    """Build a shell-safe, path-specific screen session name."""
+    path = Path(image_path).expanduser().resolve()
+    image_id = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
+    image_label = re.sub(
+        r"[^A-Za-z0-9_.-]+",
+        "_",
+        path.name,
+    ).strip("._-")
+    parts = [__title__, image_label[:48] or "image", image_id]
+    if suffix:
+        parts.append(suffix)
+    return "-".join(parts)
+
+
+@contextmanager
+def image_operation_lock(image_path: Path) -> Iterator[None]:
+    """Serialize destructive operations for one image across processes."""
+    path = Path(image_path).expanduser().resolve()
+    image_id = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    lock_file = path.parent / f".{__title__}-{image_id}.lock"
+    with lock_file.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def locked_image_operation(method):
+    """Serialize a VM method using its image path."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with image_operation_lock(self.image_path):
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
 
 def log_info(msg: str, verbose: bool = True) -> None:
     """Print informational message only when verbose is enabled"""
@@ -69,7 +114,7 @@ def get_proxy_settings() -> dict:
         proxies["https"] = os.environ["https_proxy"]
     return proxies
 
-def download_file(url: str, target_path: str, executable: bool = False) -> None:
+def download_file(url: str, target_path: str, executable: bool = False) -> bool:
     """
     Download file and save
     Args:
@@ -111,23 +156,39 @@ def wait_for_process_end(pid: int, timeout: float = 5.0, check_interval: float =
             return True
     return False
 
-def kill_process(pid: int, force: bool = True) -> bool:
+def kill_process(
+    pid: int,
+    force: bool = True,
+    timeout: Optional[float] = None,
+) -> bool:
     """
     Kill process
     Args:
         pid: Process ID
         force: Force kill if needed
+        timeout: Maximum total seconds to wait, or None for the legacy limit
     Returns:
         bool: Whether process was killed
     """
     try:
+        deadline = None if timeout is None else time.monotonic() + max(timeout, 0)
+
         os.kill(pid, signal.SIGTERM)
-        if wait_for_process_end(pid, timeout=5.0):
+        term_timeout = 5.0
+        if deadline is not None:
+            term_timeout = min(term_timeout, max(deadline - time.monotonic(), 0))
+        if wait_for_process_end(pid, timeout=term_timeout):
             return True
             
         if force:
             os.kill(pid, signal.SIGKILL)
-            return wait_for_process_end(pid, timeout=1.0)
+            kill_timeout = 1.0
+            if deadline is not None:
+                kill_timeout = min(
+                    kill_timeout,
+                    max(deadline - time.monotonic(), 0),
+                )
+            return wait_for_process_end(pid, timeout=kill_timeout)
             
         return False
     except ProcessLookupError:
@@ -135,15 +196,32 @@ def kill_process(pid: int, force: bool = True) -> bool:
     except OSError:
         return False
 
-def check_screen_exists(screen_name: str) -> bool:
+def check_screen_exists(screen_name: str) -> Optional[bool]:
     """Check if a screen session exists"""
     try:
-        result = subprocess.run(['screen', '-ls'], capture_output=True, text=True)
-        return screen_name in result.stdout
-    except subprocess.SubprocessError:
+        result = subprocess.run(
+            ['screen', '-ls'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            parts = line.strip().split()
+            if not parts:
+                continue
+            session_id = parts[0]
+            session_name = (
+                session_id.split(".", 1)[1]
+                if "." in session_id
+                else session_id
+            )
+            if session_name == screen_name:
+                return True
         return False
+    except (OSError, subprocess.SubprocessError):
+        return None
 
-def check_command_injection(input_str: str) -> bool:
+def check_command_injection(input_str: Optional[str]) -> bool:
     """
     Check if the user controlled string is safe from command injection
     
@@ -152,6 +230,9 @@ def check_command_injection(input_str: str) -> bool:
     Returns:
         bool: True for insecure, False for secure
     """
+    if input_str is None:
+        return False
+
     # Define dangerous characters and patterns
     dangerous_chars = {
         '&',        # command1 & command2

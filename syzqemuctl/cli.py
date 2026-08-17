@@ -1,4 +1,5 @@
 import os
+import subprocess
 import click
 from rich.console import Console
 from rich.table import Table
@@ -38,21 +39,22 @@ def print_version(ctx, param, value):
 def cli():
     """QEMU virtual machine management tool"""
     try:
-        # Try to load config
-        if not global_conf.load():
-            if click.get_current_context().invoked_subcommand != "init":
-                console.print(f"[red]Error: Please run '{__title__} init' first[/red]")
-                exit(1)
+        global_conf.load()
     except Exception as e:
         console.print(f"[red]Error: Failed to load config - {e}[/red]")
-        if click.get_current_context().invoked_subcommand != "init":
-            exit(1)
+
+
+def require_config() -> str:
+    """Return images_home or fail without interfering with subcommand help"""
+    if not global_conf.images_home:
+        raise click.ClickException(f"Please run '{__title__} init' first")
+    return global_conf.images_home
 
 @cli.command()
 @click.option("--images-home", required=True, help="Images home directory")
 @click.option("--force", is_flag=True, help="Force reinitialize")
 @click.option("--wait", is_flag=True, help="Wait until template creation completes")
-@click.option("--size", type=int, default=3072, help="Template disk size in MB (default: 3072)")
+@click.option("--size", type=click.IntRange(min=1), default=3072, help="Template disk size in MB (default: 3072)")
 def init(images_home: str, force: bool = False, wait: bool = False, size: int = 3072):
     """Initialize configuration"""
     if global_conf.is_initialized() and not force:
@@ -63,10 +65,12 @@ def init(images_home: str, force: bool = False, wait: bool = False, size: int = 
         if not click.confirm("Reinitialize?"):
             console.print("[green]Everything kept[/green]")
             return
+        force = True
 
     if utils.check_command_injection(images_home):
-        console.print(f"[red]Invalid image home: contains dangerous characters[/red]")
-        return
+        raise click.ClickException(
+            "Invalid image home: contains dangerous characters"
+        )
     # Initialize config
     global_conf.initialize(images_home, force=force, verbose=True)
     console.print(f"[green]Default cache dir: {global_conf.DEFAULT_CACHE_DIR}[/green]")
@@ -74,7 +78,8 @@ def init(images_home: str, force: bool = False, wait: bool = False, size: int = 
 
     # Initialize image manager
     manager = ImageManager(global_conf.images_home, verbose=True)
-    manager.initialize(force=force, blocking=wait, size=size)
+    if not manager.initialize(force=force, blocking=wait, size=size):
+        raise click.ClickException("Failed to initialize template image")
     console.print("[green]Starting template image creation, this may take a while...[/green]")
     console.print(f"Use '{__title__} status image-template' to check progress")
 
@@ -84,33 +89,40 @@ def init(images_home: str, force: bool = False, wait: bool = False, size: int = 
 @click.option("--force", is_flag=True, help="Force creation from scratch, bypassing cache")
 def create(name: str, size: Optional[int], force: bool):
     """Create new image"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
+        raise click.ClickException(
+            "Invalid image name: contains dangerous characters"
+        )
+    manager = ImageManager(images_home, verbose=True)
     if manager.create(name, size, force=force):
         console.print(f"[green]Successfully created image: {name}[/green]")
     else:
-        console.print(f"[red]Failed to create image: {name}[/red]")
+        raise click.ClickException(f"Failed to create image: {name}")
 
 @cli.command()
 @click.argument("name")
 def delete(name: str):
     """Delete image"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
-    manager.delete(name)
+        raise click.ClickException(
+            "Invalid image name: contains dangerous characters"
+        )
+    manager = ImageManager(images_home, verbose=True)
+    if not manager.delete(name):
+        raise click.ClickException(f"Failed to delete image: {name}")
 
 @cli.command()
 @click.argument("name")
 def status(name: str):
     """Query image status"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
+        raise click.ClickException(
+            "Invalid image name: contains dangerous characters"
+        )
+    manager = ImageManager(images_home, verbose=True)
     if info := manager.get_image_info(name):
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Property")
@@ -133,9 +145,21 @@ def status(name: str):
                          datetime.fromtimestamp(info.created_at).strftime("%Y-%m-%d %H:%M:%S"))
 
         # Show running status
-        creation_screen = f"{__title__}-{name}-creation"
-        if utils.check_screen_exists(creation_screen):
+        creation_screen = utils.make_screen_name(info.path, "creation")
+        legacy_creation_screen = (
+            f"{__title__}-template-creation"
+            if name == "image-template"
+            else f"{__title__}-{name}-creation"
+        )
+        creation_states = [utils.check_screen_exists(creation_screen)]
+        if legacy_creation_screen != creation_screen:
+            creation_states.append(
+                utils.check_screen_exists(legacy_creation_screen)
+            )
+        if any(creation_states):
             table.add_row("Status", "[yellow]Creating[/yellow]")
+        elif any(state is None for state in creation_states):
+            table.add_row("Status", "[yellow]Unknown[/yellow]")
         elif info.running:
             vm = VM(str(info.path), verbose=True)
             if vm.is_ready():
@@ -162,16 +186,17 @@ def status(name: str):
 
         console.print(table)
     else:
-        console.print(f"[red]Error: Image {name} not found[/red]")
+        raise click.ClickException(f"Image {name} not found")
 
 @cli.command()
 def list():
     """List all images"""
-    manager = ImageManager(global_conf.images_home, verbose=True)
+    images_home = require_config()
+    manager = ImageManager(images_home, verbose=True)
     images = manager.list_images()
     
     # Print global config info
-    console.print(f"\n[bold cyan]Global Configuration[/bold cyan]")
+    console.print("\n[bold cyan]Global Configuration[/bold cyan]")
     console.print(f"Images Home: {global_conf.images_home}")
     console.print()
     
@@ -251,82 +276,106 @@ def list():
 @click.option("--mem", help="Memory size")
 @click.option("--smp", type=int, help="CPU cores")
 @click.option("--snapshot", is_flag=True, help="Run with snapshot mode (changes discarded on shutdown)")
-def run(name: str, kernel: str, port: int, mem: str, smp: int, snapshot: bool):
+@click.option(
+    "--kernel-args",
+    help="Replace the complete guest kernel command line",
+)
+@click.option(
+    "--extra-kernel-args",
+    help="Append arguments to the saved or default guest kernel command line",
+)
+def run(
+    name: str,
+    kernel: Optional[str],
+    port: Optional[int],
+    mem: Optional[str],
+    smp: Optional[int],
+    snapshot: bool,
+    kernel_args: Optional[str],
+    extra_kernel_args: Optional[str],
+):
     """Run virtual machine"""
+    images_home = require_config()
     if utils.check_command_injection(name) or utils.check_command_injection(kernel) or utils.check_command_injection(mem):
-        console.print(f"[red]Invalid input: contains dangerous characters[/red]")
-        return
+        raise click.ClickException("Invalid input: contains dangerous characters")
     # Check if image exists
-    manager = ImageManager(global_conf.images_home, verbose=True)
+    manager = ImageManager(images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
-        console.print(f"[red]Error: Image {name} not found[/red]")
-        return
+        raise click.ClickException(f"Image {name} not found")
         
-    # Check if already running
-    if info.running:
-        console.print(f"[red]Error: Image {name} is already running[/red]")
-        return
-
     # Check if image is ready
     if not info.image_ready:
-        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
-        return
+        raise click.ClickException(f"Image {name} is not ready yet")
 
     # Create VM instance and start
     vm = VM(str(info.path), verbose=True)
-    if vm.start(kernel, port, mem, smp, snapshot):
+    if vm.start(
+        kernel=kernel,
+        port=port,
+        mem=mem,
+        smp=smp,
+        snapshot=snapshot,
+        kernel_args=kernel_args,
+        extra_kernel_args=extra_kernel_args,
+    ):
         console.print("[green]Starting VM... SSH will be available soon[/green]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
     else:
-        console.print("[red]Failed to start VM[/red]")
+        raise click.ClickException("Failed to start VM")
 
 @cli.command()
 @click.argument("name")
-def stop(name: str):
+@click.option("--wait", is_flag=True, help="Wait until runtime cleanup completes")
+@click.option("--force", is_flag=True, help="Clean stale runtime and orphan QEMU processes")
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=1),
+    default=20,
+    show_default=True,
+    help="Maximum seconds to wait when --wait is used",
+)
+def stop(name: str, wait: bool, force: bool, timeout: int):
     """Stop virtual machine"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
+        raise click.ClickException("Invalid image name: contains dangerous characters")
+    manager = ImageManager(images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
-        console.print(f"[red]Error: Image {name} not found[/red]")
-        return
+        raise click.ClickException(f"Image {name} not found")
         
-    if not info.running:
+    if not info.running and not force:
         console.print(f"[yellow]Warning: Image {name} is not running[/yellow]")
         return
         
     vm = VM(str(info.path), verbose=True)
-    if vm.stop():
+    if vm.stop(wait=wait, timeout=timeout, force=force):
         console.print("[green]VM stopped[/green]")
     else:
-        console.print("[red]Failed to stop VM[/red]")
+        raise click.ClickException("Failed to stop VM")
 
 @cli.command()
 @click.argument("name")
 def restart(name: str):
     """Restart virtual machine with last configuration"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
+        raise click.ClickException(
+            "Invalid image name: contains dangerous characters"
+        )
+    manager = ImageManager(images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
-        console.print(f"[red]Error: Image {name} not found[/red]")
-        return
+        raise click.ClickException(f"Image {name} not found")
     
     if not info.image_ready:
-        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
-        return
+        raise click.ClickException(f"Image {name} is not ready yet")
 
     if not info.running:
-        console.print(f"[yellow]Warning: Image {name} is not running[/yellow]")
-        return
+        raise click.ClickException(f"Image {name} is not running")
 
     # Stop VM
     vm = VM(str(info.path), verbose=True)
     if not vm.stop():
-        console.print("[red]Failed to stop VM[/red]")
-        return
+        raise click.ClickException("Failed to stop VM")
     console.print("[green]VM stopped[/green]")
     
     # Restart VM with the previous configuration
@@ -334,16 +383,22 @@ def restart(name: str):
         console.print("[yellow]Restarting VM with last boot configuration (no snapshot by default), this may take some time[/yellow]")
         console.print(f"Use '{__title__} status {name}' or check console for status")
     else:
-        console.print("[red]Failed to restart VM[/red]")
+        raise click.ClickException("Failed to restart VM")
 
 @cli.command()
 @click.argument("src")
 @click.argument("dst")
-def cp(src: str, dst: str):
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Maximum seconds for the file transfer",
+)
+def cp(src: str, dst: str, timeout: Optional[int]):
     """Copy files between host and VM"""
+    images_home = require_config()
     if utils.check_command_injection(src) or utils.check_command_injection(dst):
-        console.print(f"[red]Invalid input: contains dangerous characters[/red]")
-        return
+        raise click.ClickException("Invalid input: contains dangerous characters")
     # Parse paths
     def parse_path(path: str):
         if ":" in path:
@@ -355,84 +410,93 @@ def cp(src: str, dst: str):
     dst_image, dst_path = parse_path(dst)
     
     if src_image and dst_image:
-        console.print("[red]Error: Direct copy between VMs not supported[/red]")
-        return
+        raise click.ClickException("Direct copy between VMs not supported")
         
     if not (src_image or dst_image):
-        console.print("[red]Error: Must specify a VM path[/red]")
-        return
+        raise click.ClickException("Must specify a VM path")
         
     # Get image info
     image_name = src_image or dst_image
-    manager = ImageManager(global_conf.images_home, verbose=True)
+    manager = ImageManager(images_home, verbose=True)
     if not (info := manager.get_image_info(image_name)):
-        console.print(f"[red]Error: Image {image_name} not found[/red]")
-        return
+        raise click.ClickException(f"Image {image_name} not found")
         
     if not info.image_ready:
-        console.print(f"[red]Error: Image {image_name} is not ready yet[/red]")
-        return
+        raise click.ClickException(f"Image {image_name} is not ready yet")
 
     if not info.running:
-        console.print(f"[red]Error: Image {image_name} is not running[/red]")
-        return
+        raise click.ClickException(f"Image {image_name} is not running")
 
     # Handle file transfer
     vm = VM(str(info.path), verbose=True)
-    if not vm.is_ready():
-        console.print(f"[yellow]Error: Image {image_name} is starting, please wait[/yellow]")
-        return
-        
-    with vm:
-        try:
+    try:
+        with vm:
             if src_image:
                 dst_dir = os.path.dirname(dst_path)
-                os.makedirs(dst_dir, exist_ok=True)
-                vm.copy_from_vm(src_path, dst_path)
+                if dst_dir:
+                    os.makedirs(dst_dir, exist_ok=True)
+                vm.copy_from_vm(src_path, dst_path, timeout=timeout)
                 console.print(f"[green]Copied from VM: {src} to {dst}[/green]")
             else:
                 if not os.path.exists(src_path):
                     raise FileNotFoundError(f"Source path {src_path} does not exist")
-                vm.copy_to_vm(src_path, dst_path)
+                vm.copy_to_vm(src_path, dst_path, timeout=timeout)
                 console.print(f"[green]Copied to VM: {src} to {dst}[/green]")
-        except Exception as e:
-            console.print(f"[red]Failed to copy file: {e}[/red]")
+    except Exception as e:
+        raise click.ClickException(f"Failed to copy file: {e}") from e
 
 @cli.command()
 @click.argument("name")
 @click.argument("command")
-def exec(name: str, command: str):
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Maximum seconds for command execution",
+)
+def exec(name: str, command: str, timeout: Optional[int]):
     """Execute command in VM"""
+    images_home = require_config()
     if utils.check_command_injection(name):
-        console.print(f"[red]Invalid image name: contains dangerous characters[/red]")
-        return
-    manager = ImageManager(global_conf.images_home, verbose=True)
+        raise click.ClickException("Invalid image name: contains dangerous characters")
+    manager = ImageManager(images_home, verbose=True)
     if not (info := manager.get_image_info(name)):
-        console.print(f"[red]Error: Image {name} not found[/red]")
-        return
+        raise click.ClickException(f"Image {name} not found")
         
     if not info.image_ready:
-        console.print(f"[red]Error: Image {name} is not ready yet[/red]")
-        return
+        raise click.ClickException(f"Image {name} is not ready yet")
 
     if not info.running:
-        console.print(f"[red]Error: Image {name} is not running[/red]")
-        return
+        raise click.ClickException(f"Image {name} is not running")
 
     # Execute command
     vm = VM(str(info.path), verbose=True)
-        
-    with vm:
-        try:
-            stdout, stderr = vm.execute(command)
+
+    try:
+        with vm:
+            stdout, stderr = vm.execute(
+                command,
+                timeout=timeout,
+                check=True,
+            )
             if stdout:
                 console.print("[bold]STDOUT:[/bold]")
                 console.print(stdout)
             if stderr:
                 console.print("[bold red]STDERR:[/bold red]")
                 console.print(stderr)
-        except Exception as e:
-            console.print(f"[red]Failed to execute command: {e}[/red]")
+    except subprocess.CalledProcessError as e:
+        if e.output:
+            console.print("[bold]STDOUT:[/bold]")
+            console.print(e.output)
+        if e.stderr:
+            console.print("[bold red]STDERR:[/bold red]")
+            console.print(e.stderr)
+        raise click.ClickException(
+            f"Remote command exited with status {e.returncode}"
+        ) from e
+    except Exception as e:
+        raise click.ClickException(f"Failed to execute command: {e}") from e
 
 if __name__ == "__main__":
-    cli() 
+    cli()
