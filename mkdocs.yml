@@ -18,6 +18,7 @@ nav:
   - Overview: index.md
   - Getting started: getting-started.md
   - Concepts: concepts.md
+  - Agent Skill: agent-skill.md
   - Guides:
       - VM lifecycle: guides/vm-lifecycle.md
       - Kernel command line: guides/kernel-command-line.md

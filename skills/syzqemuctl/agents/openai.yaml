@@ -1,0 +1,4 @@
+interface:
+  display_name: "syzqemuctl"
+  short_description: "Manage Syzkaller QEMU images and VMs"
+  default_prompt: "Use $syzqemuctl to manage a Syzkaller QEMU image or VM safely."
