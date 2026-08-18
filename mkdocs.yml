@@ -1,0 +1,45 @@
+site_name: syzqemuctl
+site_description: Manage Syzkaller QEMU images and virtual machines from a CLI or Python API.
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/"]
+repo_url: https://github.com/QGrain/syzqemuctl
+repo_name: QGrain/syzqemuctl
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Concepts: concepts.md
+  - Guides:
+      - VM lifecycle: guides/vm-lifecycle.md
+      - Kernel command line: guides/kernel-command-line.md
+      - Automation: guides/automation.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Python API: reference/python-api.md
+      - Runtime diagnostics: reference/runtime-diagnostics.md
+  - Troubleshooting: troubleshooting.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+strict: true
