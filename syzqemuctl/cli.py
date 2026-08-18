@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import click
@@ -187,6 +188,45 @@ def status(name: str):
         console.print(table)
     else:
         raise click.ClickException(f"Image {name} not found")
+
+
+@cli.command()
+@click.argument("name")
+@click.option(
+    "--timeout",
+    type=click.FloatRange(min=0.1),
+    default=5.0,
+    show_default=True,
+    help="Maximum seconds for runtime inspection",
+)
+@click.option(
+    "--no-check-port",
+    is_flag=True,
+    help="Skip probing the saved SSH forwarding port",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output JSON")
+def diagnose(name: str, timeout: float, no_check_port: bool, as_json: bool):
+    """Inspect VM runtime resources without changing them."""
+    images_home = require_config()
+    if utils.check_command_injection(name):
+        raise click.ClickException(
+            "Invalid image name: contains dangerous characters"
+        )
+    manager = ImageManager(images_home, verbose=True)
+    if not (info := manager.get_image_info(name)):
+        raise click.ClickException(f"Image {name} not found")
+
+    try:
+        diagnostics = VM(str(info.path)).runtime_diagnostics(
+            timeout=timeout,
+            check_port=not no_check_port,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    if as_json:
+        click.echo(json.dumps(diagnostics.to_dict(), sort_keys=True))
+    else:
+        console.print(diagnostics.summary(), markup=False)
 
 @cli.command()
 def list():

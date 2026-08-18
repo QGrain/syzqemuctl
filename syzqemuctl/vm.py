@@ -2,6 +2,7 @@ import re
 import shlex
 import subprocess
 import logging
+import math
 import socket
 import threading
 import paramiko
@@ -16,8 +17,8 @@ def set_paramiko_logging(level: int = logging.CRITICAL) -> None:
 # Default: suppress noisy SSH error tracebacks during VM boot polling
 set_paramiko_logging(logging.CRITICAL)
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from scp import SCPClient, SCPException
 import time
 
@@ -101,6 +102,77 @@ class VMConfig:
             )
         except (OSError, ValueError):
             return None
+
+
+@dataclass
+class RuntimeDiagnostics:
+    """Read-only snapshot of runtime resources associated with one VM image."""
+
+    image_path: str
+    screen_sessions: Optional[List[str]]
+    qemu_pids: Optional[List[int]]
+    pidfile_exists: bool
+    pidfile_pid: Optional[int]
+    pidfile_pid_valid: Optional[bool]
+    port: Optional[int]
+    port_open: Optional[bool]
+    port_checked: bool
+    log_file_exists: bool
+    runtime_clean: Optional[bool]
+    errors: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+    def summary(self) -> str:
+        """Return a compact human-readable summary."""
+        runtime = {
+            True: "clean",
+            False: "dirty",
+            None: "unknown",
+        }[self.runtime_clean]
+        screens = (
+            "unknown"
+            if self.screen_sessions is None
+            else ",".join(self.screen_sessions) or "none"
+        )
+        qemu = (
+            "unknown"
+            if self.qemu_pids is None
+            else ",".join(str(pid) for pid in self.qemu_pids) or "none"
+        )
+        if not self.pidfile_exists:
+            pidfile = "absent"
+        elif self.pidfile_pid is None:
+            pidfile = "invalid"
+        elif self.pidfile_pid_valid is True:
+            pidfile = f"{self.pidfile_pid} (valid)"
+        elif self.pidfile_pid_valid is False:
+            pidfile = f"{self.pidfile_pid} (stale)"
+        else:
+            pidfile = f"{self.pidfile_pid} (unverified)"
+
+        if self.port is None:
+            port = "unavailable"
+        elif not self.port_checked:
+            port = f"{self.port} (not checked)"
+        elif self.port_open is None:
+            port = f"{self.port} (unknown)"
+        else:
+            port = f"{self.port} ({'open' if self.port_open else 'closed'})"
+
+        parts = [
+            f"runtime={runtime}",
+            f"screen={screens}",
+            f"qemu={qemu}",
+            f"pidfile={pidfile}",
+            f"port={port}",
+            f"log={'present' if self.log_file_exists else 'absent'}",
+        ]
+        if self.errors:
+            parts.append(f"errors={'; '.join(self.errors)}")
+        return "; ".join(parts)
 
 class VM:
     """Virtual machine manager for running, stopping, and SSH operations"""
@@ -313,18 +385,18 @@ class VM:
         return sessions
 
     def _qemu_pids_for_image(
-        self, candidate_pids: Optional[List[int]] = None
+        self,
+        candidate_pids: Optional[List[int]] = None,
+        deadline: Optional[float] = None,
+        strict: bool = False,
     ) -> List[int]:
         """Return qemu-system pids whose cmdline points at this VM image"""
         image_file = (self.image_path / "bullseye.img").resolve()
         pids = []
 
+        proc_dirs: Iterable[Path]
         if candidate_pids is None:
-            proc_dirs = [
-                path
-                for path in self.PROC_ROOT.iterdir()
-                if path.name.isdigit()
-            ]
+            proc_dirs = self.PROC_ROOT.iterdir()
         else:
             proc_dirs = [
                 self.PROC_ROOT / str(pid)
@@ -332,9 +404,17 @@ class VM:
             ]
 
         for proc_dir in proc_dirs:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("QEMU process inspection timed out")
+            if not proc_dir.name.isdigit():
+                continue
             try:
                 cmdline = (proc_dir / "cmdline").read_bytes().split(b"\0")
-            except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+            except PermissionError:
+                if strict:
+                    raise
+                continue
+            except (FileNotFoundError, ProcessLookupError, OSError):
                 continue
             if not cmdline or not cmdline[0]:
                 continue
@@ -377,6 +457,8 @@ class VM:
             if matches_image:
                 pids.append(int(proc_dir.name))
 
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("QEMU process inspection timed out")
         return pids
 
     def _pidfile_qemu_pid(self) -> Optional[int]:
@@ -510,6 +592,7 @@ class VM:
         if not wait:
             return self._runtime_is_clean(port=port)
 
+        assert deadline is not None
         while time.monotonic() < deadline:
             if self._runtime_is_clean(port=port, deadline=deadline):
                 return True
@@ -528,6 +611,130 @@ class VM:
     def cleanup_runtime(self, timeout: int = 20) -> bool:
         """Force cleanup all runtime artifacts and wait until they disappear"""
         return self.stop(wait=True, timeout=timeout, force=True)
+
+    def runtime_diagnostics(
+        self,
+        timeout: float = 5.0,
+        check_port: bool = True,
+    ) -> RuntimeDiagnostics:
+        """Inspect this VM's runtime resources without changing their state."""
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite value greater than zero")
+
+        deadline = time.monotonic() + timeout
+        errors = []
+
+        try:
+            log_file_exists = self.log_file.exists()
+        except OSError as error:
+            log_file_exists = False
+            errors.append(f"log file inspection failed: {error}")
+
+        pidfile_known = True
+        try:
+            pidfile_exists = self.pid_file.exists()
+        except OSError as error:
+            pidfile_exists = False
+            pidfile_known = False
+            errors.append(f"pidfile inspection failed: {error}")
+
+        pidfile_pid = None
+        if pidfile_exists:
+            try:
+                pidfile_pid = int(self.pid_file.read_text().strip())
+            except ValueError:
+                errors.append("pidfile contains an invalid PID")
+            except OSError as error:
+                pidfile_known = False
+                errors.append(f"pidfile read failed: {error}")
+
+        boot_script_exists = False
+        port_state_known = True
+        vm_conf = None
+        try:
+            boot_script_exists = self.boot_script.exists()
+            vm_conf = self.get_last_vm_config()
+            if check_port and boot_script_exists and vm_conf is None:
+                port_state_known = False
+                errors.append("saved VM configuration could not be parsed")
+        except OSError as error:
+            port_state_known = not check_port
+            errors.append(f"saved VM configuration inspection failed: {error}")
+        port = vm_conf.port if vm_conf is not None else None
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            screen_sessions = None
+            errors.append("screen inspection timed out")
+        else:
+            screen_sessions = self._screen_session_ids(
+                timeout=min(remaining, 5.0)
+            )
+            if screen_sessions is None:
+                errors.append("screen inspection failed or timed out")
+
+        try:
+            qemu_pids = self._qemu_pids_for_image(
+                deadline=deadline,
+                strict=True,
+            )
+        except TimeoutError:
+            qemu_pids = None
+            errors.append("QEMU process inspection timed out")
+        except OSError as error:
+            qemu_pids = None
+            errors.append(f"QEMU process inspection failed: {error}")
+
+        pidfile_pid_valid = None
+        if pidfile_exists and pidfile_known:
+            if pidfile_pid is None:
+                pidfile_pid_valid = False
+            elif qemu_pids is not None:
+                pidfile_pid_valid = pidfile_pid in qemu_pids
+
+        port_open = None
+        port_checked = check_port and port is not None
+        if port_checked:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                errors.append("SSH port inspection timed out")
+            else:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                        sock.settimeout(min(remaining, 0.2))
+                        port_open = sock.connect_ex(("127.0.0.1", port)) == 0
+                except OSError as error:
+                    errors.append(f"SSH port inspection failed: {error}")
+
+        dirty = (
+            bool(screen_sessions)
+            or bool(qemu_pids)
+            or pidfile_exists
+            or port_open is True
+        )
+        unknown = (
+            screen_sessions is None
+            or qemu_pids is None
+            or not pidfile_known
+            or not port_state_known
+            or (port_checked and port_open is None)
+        )
+        runtime_clean = False if dirty else None if unknown else True
+
+        return RuntimeDiagnostics(
+            image_path=str(self.image_path),
+            screen_sessions=screen_sessions,
+            qemu_pids=qemu_pids,
+            pidfile_exists=pidfile_exists,
+            pidfile_pid=pidfile_pid,
+            pidfile_pid_valid=pidfile_pid_valid,
+            port=port,
+            port_open=port_open,
+            port_checked=port_checked,
+            log_file_exists=log_file_exists,
+            runtime_clean=runtime_clean,
+            errors=errors,
+        )
             
     def is_running(self) -> bool:
         """Check if VM is running"""

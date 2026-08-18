@@ -114,6 +114,11 @@ Each version without `BUG` tag is usable.
     - Replace the `netstat` port scan with socket binding and remove the duplicate SSH handshake from `connect()`
     - Expose timeout and strong-cleanup controls in the CLI, with non-zero exit status on operation failures
     - Restore tracked unit tests and retain Python 3.8 compatibility
+- 0.3.6: 2026-08-18
+    - Add the read-only `VM.runtime_diagnostics()` API with structured screen, QEMU, pidfile, port, log, and runtime-cleanliness state
+    - Bound external runtime checks by a caller-provided timeout and report unavailable state through nullable fields and `errors`
+    - Add `RuntimeDiagnostics.to_dict()` and `summary()` for machine-readable records and concise logs
+    - Add `syzqemuctl diagnose` with optional `--json` and `--no-check-port` output controls
 </details open>
 
 <details>
@@ -214,12 +219,18 @@ syzqemuctl stop my-image --wait --force --timeout 20
 syzqemuctl restart my-image
 ```
 
-9. List all images:
+9. Diagnose VM runtime resources without changing them:
+```bash
+syzqemuctl diagnose my-image
+syzqemuctl diagnose my-image --timeout 5 --json
+```
+
+10. List all images:
 ```bash
 syzqemuctl list
 ```
 
-10. Delete the image:
+11. Delete the image:
 ```bash
 syzqemuctl delete my-image
 ```
@@ -273,6 +284,11 @@ vm.cleanup_runtime(timeout=20)
 
 # force=True is useful after a failed start.
 # wait=True is useful before reusing an image.
+
+# Collect a read-only runtime snapshot after start or cleanup failures.
+diagnostics = vm.runtime_diagnostics(timeout=5, check_port=True)
+print(diagnostics.summary())
+record = diagnostics.to_dict()  # JSON/CSV-friendly structured fields
 ```
 
 ## License
