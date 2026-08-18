@@ -2,7 +2,7 @@
     syzqemuctl
 </h1>
 
-<p align="center">A command-line tool for managing QEMU disk images and virtual machines created through <a href="https://github.com/google/syzkaller" target="_blank">Syzkaller</a>'s `create-image.sh`.</p>
+<p align="center">A command-line tool and Python API for managing QEMU disk images and virtual machines created through <a href="https://github.com/google/syzkaller" target="_blank">Syzkaller</a>'s `create-image.sh`.</p>
 
 <p align="center">
 <img src="https://img.shields.io/pypi/v/syzqemuctl?label=version" alt="PyPI - Version">
@@ -10,6 +10,17 @@
 <img src="https://img.shields.io/github/license/QGrain/syzqemuctl" alt="GitHub License">
 <img src="https://img.shields.io/codacy/grade/683d9c6a11d2492fbaf59ff069b275f2" alt="Codacy grade">
 </p>
+
+## Documentation
+
+- [Official documentation](https://syzqemuctl.readthedocs.io/)
+- [Getting started](https://syzqemuctl.readthedocs.io/en/latest/getting-started/)
+- [CLI reference](https://syzqemuctl.readthedocs.io/en/latest/reference/cli/)
+- [Python API reference](https://syzqemuctl.readthedocs.io/en/latest/reference/python-api/)
+- [Agent Skill guide](https://syzqemuctl.readthedocs.io/en/latest/agent-skill/)
+
+The repository also ships a portable syzqemuctl Agent Skill under
+[`skills/syzqemuctl`](skills/syzqemuctl/).
 
 ## Features
 
@@ -119,7 +130,11 @@ Each version without `BUG` tag is usable.
     - Bound external runtime checks by a caller-provided timeout and report unavailable state through nullable fields and `errors`
     - Add `RuntimeDiagnostics.to_dict()` and `summary()` for machine-readable records and concise logs
     - Add `syzqemuctl diagnose` with optional `--json` and `--no-check-port` output controls
-</details open>
+- 0.3.7: 2026-08-18
+    - Add official MkDocs Material documentation and Read the Docs build configuration
+    - Add a portable syzqemuctl Agent Skill with lifecycle and failure-handling guidance
+    - Validate documentation and Agent Skill structure in CI
+</details>
 
 <details>
 <summary>TODOs</summary>

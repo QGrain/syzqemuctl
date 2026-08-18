@@ -1,6 +1,6 @@
 __title__ = "syzqemuctl"
-__version__ = "0.3.6"
-__description__ = "A command-line tool for managing QEMU disk images and virtual machines created through Syzkaller's create-image.sh."
+__version__ = "0.3.7"
+__description__ = "A command-line tool and Python API for managing QEMU disk images and virtual machines created through Syzkaller's create-image.sh."
 __author__ = "Zhiyu Zhang"
 __email__ = "zhiyuzhang999@gmail.com"
 __license__ = "Apache-2.0"

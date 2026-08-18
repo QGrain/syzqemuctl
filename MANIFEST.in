@@ -1,0 +1,4 @@
+include .readthedocs.yaml
+include mkdocs.yml
+recursive-include docs *.md *.txt
+recursive-include skills *.md *.yaml
