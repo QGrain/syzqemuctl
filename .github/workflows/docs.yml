@@ -1,0 +1,21 @@
+name: docs
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r docs/requirements.txt
+      - run: python -m mkdocs build --strict
