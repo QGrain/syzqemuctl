@@ -44,6 +44,7 @@ setup(
     long_description_content_type='text/markdown',
     author=info["__author__"],
     author_email=info["__email__"],
+    license=info["__license__"],
     url=info["__url__"],
     packages=find_packages(exclude=['tests', 'tests.*', '*.tests', '*.tests.*']),
     entry_points={
@@ -55,7 +56,6 @@ setup(
     python_requires='>=3.8',
     include_package_data=True,
     classifiers=[
-        'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.8',
