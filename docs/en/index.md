@@ -24,6 +24,13 @@ The tool owns the host-side runtime associated with an image:
 - Consult [Troubleshooting](troubleshooting.md) after start, SSH, transfer, or
   cleanup failures.
 
+## Documentation versions
+
+The site header shows both the package version and, where applicable, the
+Read the Docs channel. `stable` follows the latest released version, `latest`
+follows the current `main` branch, and a numbered version is a snapshot of its
+corresponding release tag. Use `stable` unless you need unreleased changes.
+
 ## Supported environment
 
 `syzqemuctl` is a Linux host tool. It requires Python 3.8 or newer, QEMU,

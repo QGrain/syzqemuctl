@@ -2,5 +2,5 @@ include .readthedocs.yaml
 include mkdocs.yml
 include mkdocs.zh.yml
 include pyproject.toml
-recursive-include docs *.md *.txt .readthedocs.yaml
+recursive-include docs *.md *.py *.txt .readthedocs.yaml
 recursive-include skills *.md *.yaml

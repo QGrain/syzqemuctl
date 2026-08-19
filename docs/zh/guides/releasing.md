@@ -38,3 +38,7 @@ python -m twine upload dist/*
 英文项目是父项目。中文项目使用 `docs/zh/.readthedocs.yaml`，并注册为父项目的
 翻译项目。两个项目都应在 `Settings > Addons > Analytics` 中启用 Traffic
 Analytics。流量统计由 Read the Docs 配置，不在仓库 JavaScript 中植入。
+
+文档页眉从 `syzqemuctl/_version.py` 读取软件包版本。Read the Docs 通过构建
+环境附加 `stable` 或 `latest` 渠道标识：`stable` 指向最新发行 tag，`latest`
+跟随 `main`。面向用户的文档链接应以 `stable` 为默认版本。

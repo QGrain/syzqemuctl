@@ -53,6 +53,7 @@ class DistributionTests(unittest.TestCase):
             "mkdocs.zh.yml",
             ".readthedocs.yaml",
             "docs/zh/.readthedocs.yaml",
+            "docs/hooks.py",
             "docs/en/index.md",
             "docs/zh/index.md",
             "skills/syzqemuctl/SKILL.md",

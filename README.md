@@ -14,11 +14,11 @@
 ## Documentation
 
 - [Official documentation](https://syzqemuctl.readthedocs.io/)
-- [简体中文文档](https://syzqemuctl.readthedocs.io/zh-cn/latest/)
-- [Getting started](https://syzqemuctl.readthedocs.io/en/latest/getting-started/)
-- [CLI reference](https://syzqemuctl.readthedocs.io/en/latest/reference/cli/)
-- [Python API reference](https://syzqemuctl.readthedocs.io/en/latest/reference/python-api/)
-- [Agent Skill guide](https://syzqemuctl.readthedocs.io/en/latest/agent-skill/)
+- [简体中文文档](https://syzqemuctl.readthedocs.io/zh-cn/stable/)
+- [Getting started](https://syzqemuctl.readthedocs.io/en/stable/getting-started/)
+- [CLI reference](https://syzqemuctl.readthedocs.io/en/stable/reference/cli/)
+- [Python API reference](https://syzqemuctl.readthedocs.io/en/stable/reference/python-api/)
+- [Agent Skill guide](https://syzqemuctl.readthedocs.io/en/stable/agent-skill/)
 
 The repository also ships a portable syzqemuctl Agent Skill for Codex, Claude
 Code, OpenCode, and other Agent Skills-compatible tools under

@@ -42,3 +42,9 @@ The English project is the parent. The Chinese project uses
 Keep Traffic Analytics enabled under `Settings > Addons > Analytics` for both
 projects. Analytics are configured on Read the Docs rather than in repository
 JavaScript.
+
+The documentation header reads the package version from
+`syzqemuctl/_version.py`. Read the Docs adds the `stable` or `latest` channel
+label through its build environment: `stable` resolves to the latest release
+tag, while `latest` tracks `main`. Keep `stable` as the default version for
+user-facing documentation links.

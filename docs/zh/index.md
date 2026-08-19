@@ -21,6 +21,12 @@
 - 在程序和智能体中查阅 [Python API 参考](reference/python-api.md)。
 - 启动、SSH、传输或清理失败时查阅[故障排查](troubleshooting.md)。
 
+## 文档版本
+
+站点页眉会显示软件包版本，并在适用时标明 Read the Docs 渠道。`stable`
+跟随最新正式版本，`latest` 跟随当前 `main` 分支，带版本号的文档则对应同名
+发行 tag 的固定快照。除非需要尚未发布的改动，否则应使用 `stable`。
+
 ## 支持环境
 
 `syzqemuctl` 是 Linux 宿主机工具，需要 Python 3.8 或更高版本、QEMU、

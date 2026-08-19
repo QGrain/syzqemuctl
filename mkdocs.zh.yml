@@ -2,9 +2,12 @@ INHERIT: mkdocs.yml
 
 site_name: syzqemuctl 中文文档
 site_description: 通过命令行和 Python API 管理 Syzkaller QEMU 镜像与虚拟机。
-site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/zh-cn/latest/"]
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/zh-cn/stable/"]
 edit_uri: edit/main/docs/zh/
 docs_dir: docs/zh
+
+extra:
+  site_name_template: "syzqemuctl {version} 中文文档"
 
 theme:
   language: zh

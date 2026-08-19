@@ -1,10 +1,16 @@
 site_name: syzqemuctl
 site_description: Manage Syzkaller QEMU images and virtual machines from a CLI or Python API.
-site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/"]
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/en/stable/"]
 repo_url: https://github.com/QGrain/syzqemuctl
 repo_name: QGrain/syzqemuctl
 edit_uri: edit/main/docs/en/
 docs_dir: docs/en
+
+hooks:
+  - docs/hooks.py
+
+extra:
+  site_name_template: "syzqemuctl {version}"
 
 theme:
   name: material
