@@ -3,7 +3,8 @@ site_description: Manage Syzkaller QEMU images and virtual machines from a CLI o
 site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/"]
 repo_url: https://github.com/QGrain/syzqemuctl
 repo_name: QGrain/syzqemuctl
-edit_uri: edit/main/docs/
+edit_uri: edit/main/docs/en/
+docs_dir: docs/en
 
 theme:
   name: material
@@ -23,6 +24,7 @@ nav:
       - VM lifecycle: guides/vm-lifecycle.md
       - Kernel command line: guides/kernel-command-line.md
       - Automation: guides/automation.md
+      - Release process: guides/releasing.md
   - Reference:
       - CLI: reference/cli.md
       - Python API: reference/python-api.md

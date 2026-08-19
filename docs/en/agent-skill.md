@@ -22,24 +22,48 @@ the skill applies, and the Markdown body provides the core workflow. Detailed
 examples and recovery guidance are loaded from `references/` only when needed.
 `agents/openai.yaml` supplies optional Codex-facing display metadata.
 
-## Install for Codex
+## Install for a coding agent
 
-Clone the repository, then link the skill into the active Codex skills
-directory:
+Clone the repository, then copy or link `skills/syzqemuctl` into one of the
+agent's skill search paths:
+
+| Agent | User-level path | Project-level path |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/syzqemuctl` | `.agents/skills/syzqemuctl` |
+| Claude Code | `~/.claude/skills/syzqemuctl` | `.claude/skills/syzqemuctl` |
+| OpenCode | `~/.config/opencode/skills/syzqemuctl` | `.opencode/skills/syzqemuctl` |
+
+For example, install the skill for all Codex sessions:
 
 ```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$HOME/.agents/skills"
 ln -s /path/to/syzqemuctl/skills/syzqemuctl \
-  "${CODEX_HOME:-$HOME/.codex}/skills/syzqemuctl"
+  "$HOME/.agents/skills/syzqemuctl"
 ```
 
-Start a new Codex session after installation so the skill can be discovered.
-Use a copy instead of a symbolic link when the agent environment cannot follow
-links.
+Install it for all Claude Code sessions with:
 
-Other agents that support directory-based skills can load the same `SKILL.md`;
-place the `syzqemuctl` directory in that agent's configured skill search path.
-The `agents/openai.yaml` file is optional outside Codex.
+```bash
+mkdir -p "$HOME/.claude/skills"
+ln -s /path/to/syzqemuctl/skills/syzqemuctl \
+  "$HOME/.claude/skills/syzqemuctl"
+```
+
+OpenCode also discovers the `.agents/skills` and `.claude/skills` locations.
+If the skill is already installed there, do not install a duplicate under
+`.opencode/skills`. Otherwise, its native user-level location can be used:
+
+```bash
+mkdir -p "$HOME/.config/opencode/skills"
+ln -s /path/to/syzqemuctl/skills/syzqemuctl \
+  "$HOME/.config/opencode/skills/syzqemuctl"
+```
+
+Restart the agent after installation if it does not discover the skill during
+the current session. Use a copy instead of a symbolic link when the agent
+environment cannot follow links. The `agents/openai.yaml` file is optional
+outside Codex; the portable behavior is defined by `SKILL.md` and
+`references/`.
 
 ## Typical triggers
 
