@@ -14,12 +14,14 @@
 ## Documentation
 
 - [Official documentation](https://syzqemuctl.readthedocs.io/)
+- [简体中文文档](https://syzqemuctl.readthedocs.io/zh-cn/latest/)
 - [Getting started](https://syzqemuctl.readthedocs.io/en/latest/getting-started/)
 - [CLI reference](https://syzqemuctl.readthedocs.io/en/latest/reference/cli/)
 - [Python API reference](https://syzqemuctl.readthedocs.io/en/latest/reference/python-api/)
 - [Agent Skill guide](https://syzqemuctl.readthedocs.io/en/latest/agent-skill/)
 
-The repository also ships a portable syzqemuctl Agent Skill under
+The repository also ships a portable syzqemuctl Agent Skill for Codex, Claude
+Code, OpenCode, and other Agent Skills-compatible tools under
 [`skills/syzqemuctl`](skills/syzqemuctl/).
 
 ## Features
@@ -134,6 +136,11 @@ Each version without `BUG` tag is usable.
     - Add official MkDocs Material documentation and Read the Docs build configuration
     - Add a portable syzqemuctl Agent Skill with lifecycle and failure-handling guidance
     - Validate documentation and Agent Skill structure in CI
+- 0.3.8: 2026-08-19
+    - Adopt PEP 517 package builds while retaining setuptools and Python 3.8 compatibility
+    - Document Agent Skill installation for Codex, Claude Code, and OpenCode
+    - Add complete English and Simplified Chinese documentation with separate Read the Docs builds
+    - Validate wheel, source distribution, and both documentation languages in CI
 </details>
 
 <details>
