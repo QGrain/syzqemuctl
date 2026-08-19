@@ -1,0 +1,26 @@
+INHERIT: mkdocs.yml
+
+site_name: syzqemuctl 中文文档
+site_description: 通过命令行和 Python API 管理 Syzkaller QEMU 镜像与虚拟机。
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://syzqemuctl.readthedocs.io/zh-cn/latest/"]
+edit_uri: edit/main/docs/zh/
+docs_dir: docs/zh
+
+theme:
+  language: zh
+
+nav:
+  - 概览: index.md
+  - 快速开始: getting-started.md
+  - 核心概念: concepts.md
+  - Agent Skill: agent-skill.md
+  - 使用指南:
+      - 虚拟机生命周期: guides/vm-lifecycle.md
+      - 内核命令行: guides/kernel-command-line.md
+      - 自动化: guides/automation.md
+      - 发布流程: guides/releasing.md
+  - 参考:
+      - CLI: reference/cli.md
+      - Python API: reference/python-api.md
+      - 运行时诊断: reference/runtime-diagnostics.md
+  - 故障排查: troubleshooting.md
